@@ -127,3 +127,11 @@ Unity source includes feature toggles in `VHierarchyMenu.cs`, row visuals in `VH
 ### M2 update — Patch 14 (still version 0.1.0)
 
 Curated searchable Material Symbols Outlined catalog with official Google Fonts lazy loading; per-node icon tint presets and custom hex color; recursive icon/tint inheritance and strict settings validation. Remains to validate Google Fonts CSP support in live Creator 3.8.8 and add optional offline font/SVG pack if required. No tag or GitHub Release.
+
+### M2 update — Patch 15: selected row color correctness (still 0.1.0)
+
+- [x] Use selected background color derived from the assigned palette tint instead of Creator's opaque blue active fill for palette-colored nodes only.
+- [x] Preserve distinct selection affordance with inset accent and matching left control gutter; do not change native selections without custom tint.
+- [x] Preserve neutral Rename state and clean up CSS variables on unpaint/extension unload.
+- [x] Unit and renderer regressions for different hues, dark/light theme, inheritance and gradient toggle.
+- [ ] Confirm selected color in Cocos Creator 3.8.8 GUI on both themes and when changing palette while a node remains selected.

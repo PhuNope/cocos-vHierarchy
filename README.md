@@ -7,6 +7,13 @@
 This is a TypeScript Cocos Editor extension inspired by the provided Unity vHierarchy source. It **never patches `app.asar`**. The renderer layer uses a reversible, private Hierarchy DOM/Vue overlay; it may need adjustments for other 3.8.x builds or future Editor updates. If node UUID metadata is unavailable, customization and node mutations are disabled rather than guessing a node.
 
 
+## Patch 15 (0.1.0) — Palette-colored selected highlight
+
+- Fixed a contrast problem in Cocos Creator 3.8.8: native Hierarchy selection paints an opaque `--color-active-fill` (blue) on `.drag-item`, beneath the previous low-opacity vHierarchy gradient. Thus, assigning a palette color often appeared to have no effect while the node remained selected.
+- Selected rows **with an assigned palette color** now use an opaque selection fill derived from that actual color, a matching gradient and a 3px inset accent, rather than the native blue selection fill. Inherited colors get a softer version. The left Lock/Active gutter is tinted consistently. Selected rows **without** a palette color retain Cocos' native highlight.
+- Rename mode retains its native neutral background. Removing a palette color or disabling/unloading vHierarchy clears all selection paint CSS variables. Palette color is project metadata; Scene assets and dirty state are not changed by painting.
+- Added regressions for differently colored selections, dark/light themes, gradient-off, inheritance, selected gutter, rename and cleanup. TypeScript build/tests pass; real GUI selection behavior still needs verification in Creator 3.8.8.
+
 ## Patch 14 (0.1.0) — Material Symbols icon picker, search and tint
 
 - **Alt + right-click** a node to open the palette. It now includes a **searchable local catalog of 180+ Google Material Symbols Outlined names** alongside the 12 existing vHierarchy SVG assets. Search works offline and filters by icon name, but rendering Google icons uses the official `fonts.googleapis.com` stylesheet (lazy-loaded only when a Material glyph is requested). **Network access and Cocos Editor Content-Security-Policy permission are required for the Google font.** If loading fails, Material entries show a diamond placeholder; the bundled 12 SVG icons remain usable offline. No Google login or API key is needed, and vHierarchy does not scrape Google search results.

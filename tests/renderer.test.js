@@ -112,10 +112,13 @@ test('long node names ellipsize before Layer rather than suppressing metadata',(
 
 test('Unity gradient styling preserves selection highlight and native right-side icon',()=>{
   assert.match(renderer,/background-image:var\(--vh-row-gradient\) !important/);
-  assert.match(renderer,/background-image:linear-gradient\(rgba\(91,155,239,\.25\),rgba\(91,155,239,\.25\)\),var\(--vh-row-gradient\)/);
+  assert.match(renderer,/background-color:var\(--vh-selected-base\) !important/);
+  assert.match(renderer,/background-image:var\(--vh-selected-gradient\) !important/);
+  assert.match(renderer,/box-shadow:inset 3px 0 0 var\(--vh-selected-accent\) !important/);
+  assert.match(renderer,/\.tree-node\[is-selected="true"\]:not\(\[data-vh-tint\]\)/);
   assert.match(renderer,/VHierarchyColors\.rowBackground\(hex, theme, state\.options, false, slot === 0\)/);
   assert.match(renderer,/data-vh-inherited-color/);
-  assert.match(renderer,/removeProperty\('--vh-row-gradient'\)/);
+  assert.match(renderer,/item\.row\.style\.removeProperty\(prop\)/);
 });
 test('palette settings expose live preview and persist gradient/saturation/brightness independently',()=>{
   assert.match(renderer,/\['colorGradientsEnabled', 'Use Unity-style color gradients'\]/);
@@ -151,4 +154,16 @@ test('popups work in both Document and ShadowRoot, not inserted directly in Docu
   assert.match(renderer,/rootHost instanceof Document/);
   assert.match(renderer,/rootHost\.body \|\| rootHost\.documentElement/);
   assert.match(renderer,/else\s+rootHost\.appendChild\(wrap\)/);
+});
+
+test('palette selection overrides native blue only for tinted rows and keeps rename neutral',()=>{
+  assert.match(renderer,/\.tree-node\[is-selected="true"\]\[data-vh-tint\] > \.drag-item \{/);
+  assert.match(renderer,/background-color:var\(--vh-selected-base\) !important/);
+  assert.match(renderer,/\.tree-node\[state="rename"\]\[data-vh-tint\] > \.drag-item \{/);
+  assert.match(renderer,/background-color:transparent !important/);
+  assert.match(renderer,/\.tree-node\[is-selected='true'\]\[data-vh-tint\] > \.drag-item > \.vh-action-gutter/);
+  assert.match(renderer,/VHierarchyColors\.selectedRowPaint\(hex, theme, state\.options, false\)/);
+  assert.match(renderer,/VHierarchyColors\.selectedRowPaint\(hex, theme, state\.options, true\)/);
+  assert.match(renderer,/for \(const prop of PAINT_PROPS\)\s*item\.row\.style\.removeProperty\(prop\)/);
+  assert.match(renderer,/for \(const prop of PAINT_PROPS\)\s*h\.style\.removeProperty\(prop\)/);
 });

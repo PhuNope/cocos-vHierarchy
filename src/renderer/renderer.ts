@@ -48,7 +48,20 @@
     .vh-bookmark { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; max-width:65px; color:#ffd18c; }
     .tree-node[data-vh-stripe="1"] > .drag-item { background-color:rgba(125,140,160,.055); }
     .tree-node[data-vh-tint] > .drag-item { background-image:var(--vh-row-gradient) !important; }
-    .tree-node[is-selected="true"][data-vh-tint] > .drag-item { background-image:linear-gradient(rgba(91,155,239,.25),rgba(91,155,239,.25)),var(--vh-row-gradient) !important; }
+    /* Creator applies --color-active-fill as an opaque native selection background.
+       Replace it ONLY for palette-colored rows, not for ordinary selections.
+       This selected fill and its accent are derived from the actual node color. */
+    .tree-node[is-selected="true"][data-vh-tint] > .drag-item {
+      background-color:var(--vh-selected-base) !important;
+      background-image:var(--vh-selected-gradient) !important;
+      box-shadow:inset 3px 0 0 var(--vh-selected-accent) !important;
+    }
+    /* Keep Creator's rename editing background neutral. */
+    .tree-node[state="rename"][data-vh-tint] > .drag-item {
+      background-color:transparent !important;
+      background-image:none !important;
+      box-shadow:none !important;
+    }
     .tree-node[is-selected="true"]:not([data-vh-tint]) > .drag-item { background-image:linear-gradient(rgba(91,155,239,.25),rgba(91,155,239,.25)); }
     .tree-node[data-vh-dim="true"] > .drag-item { opacity:.24; }
     .tree-node[data-vh-compact="true"] { line-height:18px; }
@@ -110,6 +123,10 @@
     }
     .tree[data-vh-lock-gutter] > .tree-node[is-selected='true'] > .drag-item > .vh-action-gutter {
       background:rgba(80,125,175,.43);
+    }
+    .tree[data-vh-lock-gutter] > .tree-node[is-selected='true'][data-vh-tint] > .drag-item > .vh-action-gutter {
+      background:var(--vh-selected-base) !important;
+      box-shadow:inset 3px 0 0 var(--vh-selected-accent);
     }
     .tree[data-vh-lock-gutter] > .tree-node > .drag-item > ui-icon.lock {
       display:inline-flex !important; align-items:center; justify-content:center;
@@ -473,7 +490,9 @@
     } else if (badge !== item.drag.lastElementChild) item.drag.appendChild(badge);
   }
 
-  type RowTints = Array<readonly [string, string]>;
+  interface RowPaint { gradient: string; selected: VHierarchyColors.SelectedPaint; }
+  type RowTints = Array<readonly [RowPaint, RowPaint]>;
+  const PAINT_PROPS = ['--vh-row-gradient', '--vh-selected-base', '--vh-selected-gradient', '--vh-selected-accent'];
   function drawItem(item: Item, index: number, ancestors: Item[], tints: RowTints): void {
     const opts = state.options;
     const enabled = opts.enabled;
@@ -483,15 +502,21 @@
     const inherited: ResolvedAppearance = item.uuid ? nearestAppearance(item, ancestors.map(a => a.uuid)) : { colorInherited: false };
     if (enabled && inherited.color !== undefined) {
       // Precomputed once per scan; avoid per-node HSL conversion in large Scenes.
-      const gradient = tints[inherited.color]?.[inherited.colorInherited ? 1 : 0] ?? tints[0][0];
+      const paint = tints[inherited.color]?.[inherited.colorInherited ? 1 : 0] ?? tints[0][0];
       changeAttr(item.row, 'data-vh-tint', '');
       changeAttr(item.row, 'data-vh-inherited-color', inherited.colorInherited ? 'true' : undefined);
-      if (item.row.style.getPropertyValue('--vh-row-gradient') !== gradient)
-        item.row.style.setProperty('--vh-row-gradient', gradient);
+      const desired: Record<string, string> = {
+        '--vh-row-gradient': paint.gradient,
+        '--vh-selected-base': paint.selected.background,
+        '--vh-selected-gradient': paint.selected.gradient,
+        '--vh-selected-accent': paint.selected.accent,
+      };
+      for (const prop of PAINT_PROPS) if (item.row.style.getPropertyValue(prop) !== desired[prop])
+        item.row.style.setProperty(prop, desired[prop]);
     } else {
       changeAttr(item.row, 'data-vh-tint');
       changeAttr(item.row, 'data-vh-inherited-color');
-      item.row.style.removeProperty('--vh-row-gradient');
+      for (const prop of PAINT_PROPS) item.row.style.removeProperty(prop);
     }
     const iconEl = item.drag.querySelector(':scope > .vh-icon') as HTMLElement | null;
     const displayIcon = enabled && inherited.icon ? inherited.icon : '';
@@ -657,8 +682,10 @@
     scans++; panelCount = 0; vueRows = 0; views = [];
     const theme = editorTheme();
     const tints: RowTints = PALETTE.map((hex, slot)=>[
-      VHierarchyColors.rowBackground(hex,theme,state.options,false,slot===0),
-      VHierarchyColors.rowBackground(hex,theme,state.options,true,slot===0),
+      { gradient:VHierarchyColors.rowBackground(hex,theme,state.options,false,slot===0),
+        selected:VHierarchyColors.selectedRowPaint(hex,theme,state.options,false) },
+      { gradient:VHierarchyColors.rowBackground(hex,theme,state.options,true,slot===0),
+        selected:VHierarchyColors.selectedRowPaint(hex,theme,state.options,true) },
     ]);
     const scannedTrees = new Set<Element>();
     try {
@@ -1029,7 +1056,7 @@
         const h=row as HTMLElement;
         for(const key of ['data-vh-tint','data-vh-stripe','data-vh-dim','data-vh-compact','data-vh-active-control','data-vh-has-layer','data-vh-native-component','data-vh-inherited-color'])h.removeAttribute(key);
         clearGuides(h);
-        h.style.removeProperty('--vh-row-gradient');
+        for (const prop of PAINT_PROPS) h.style.removeProperty(prop);
         h.style.removeProperty('--vh-row-color'); // clean up old patch artifacts
         h.style.removeProperty('--vh-node-name-width');
         for(const child of h.querySelectorAll(':scope > .drag-item > .vh-icon,:scope > .drag-item > .vh-components,:scope > .drag-item > .vh-active,:scope > .drag-item > .vh-active-hit,:scope > .drag-item > .vh-node-layer,:scope > .drag-item > .vh-action-gutter'))child.remove();

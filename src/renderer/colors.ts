@@ -92,6 +92,31 @@ namespace VHierarchyColors {
     return `linear-gradient(90deg,${rgba(0)} 0%,${rgba(alpha)} 9%,${rgba(alpha)} 35%,${rgba(alpha * .65)} 60%,${rgba(0)} 97%)`;
   }
 
+  /** Selected rows must not inherit the native blue background-color.
+   * Cocos 3.8.8 paints `--color-active-fill` under background images, so a
+   * transparent tinted gradient alone cannot make the selected color visible.
+   * Use a palette-derived *opaque* background and a color accent, retaining a
+   * clear selection marker. This model stays independent of DOM/Cocos APIs. */
+  export interface SelectedPaint {
+    background: string;
+    gradient: string;
+    accent: string;
+  }
+
+  export function selectedRowPaint(hex: string, theme: Theme, options: Options, inherited = false): SelectedPaint {
+    const color = rgb(hex, theme, options, inherited);
+    const base: Rgb = theme === 'dark' ? [35, 42, 50] : [240, 243, 247];
+    const factor = theme === 'dark' ? (inherited ? .47 : .68) : (inherited ? .34 : .51);
+    const fill = base.map((v, i) => Math.round(v * (1 - factor) + color[i] * factor));
+    const accentTarget: Rgb = theme === 'dark' ? [229, 237, 247] : [47, 54, 65];
+    const accent = color.map((v, i) => Math.round(v * .72 + accentTarget[i] * .28));
+    const rgba = (alpha: number): string => `rgba(${color.join(',')},${alpha})`;
+    const gradient = options.colorGradientsEnabled
+      ? `linear-gradient(90deg,${rgba(inherited ? .17 : .26)} 0%,${rgba(.1)} 70%,${rgba(.04)} 100%)`
+      : `linear-gradient(${rgba(.1)},${rgba(.1)})`;
+    return { background: `rgb(${fill.join(',')})`, gradient, accent: `rgb(${accent.join(',')})` };
+  }
+
   export function swatch(hex: string, theme: Theme, options: Options): string {
     const c = rgb(hex, theme, options);
     return `rgb(${c.join(',')})`;

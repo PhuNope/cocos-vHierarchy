@@ -16,7 +16,7 @@ Unity source includes feature toggles in `VHierarchyMenu.cs`, row visuals in `VH
 
 ## Patch 3: focused usability fixes
 
-- [x] `scene:snapshot` after each successful Active `scene:set-property` (not after rejected changes) to capture Undo and scene dirty state.
+- [x] `scene:begin-recording` before each Active `scene:set-property`, `scene:end-recording` on success, and `scene:query-dirty` verification (Patch 9). Fallback snapshot is attempted only when native dirty remains false; actual GUI verification pending.
 - [x] Observe native `.tree` child insertion/expand attributes and redraw guides before the next paint. Periodic scan is only a recovery fallback.
 - [x] Remove component minimap and its saved option (native Cocos icon preference is unaffected).
 - [x] Replace Active glyph with a clickable native checkbox, stop row selection/drag event propagation.
@@ -25,7 +25,7 @@ Unity source includes feature toggles in `VHierarchyMenu.cs`, row visuals in `VH
 
 ## Previous checkpoint: `0.1.0`, patch 1
 
-- [x] Active Toggle no longer assigns to Vue tree dumps (immutable/read-only). Scene edits use `scene:query-node` + `scene:set-property` with `record: true`, and reject unexpected dumps/failed responses. Deduplicate in-flight toggles by node UUID; rely on native Scene update to rerender.
+- [x] Active Toggle no longer assigns to Vue tree dumps (immutable/read-only). Scene edits use `scene:query-node` + explicit `begin-recording` / `set-property` / `end-recording`, and reject unexpected dumps/failed responses. Deduplicate in-flight toggles by node UUID; rely on native Scene update to rerender.
 - [x] Guides adapt the provided hook's geometry: computed padding/margin, step/depth inference, sibling endings, no guessed links across missing ancestors, elbow stops at native icon/name; CSS `::before/::after` draw in existing gutter.
 - [x] 12 compressed editor-safe SVG icon substitutes available in UI palette and displayed on rows; old emoji selections remain readable.
 - [x] Compile TypeScript to JavaScript, 13 automated tests (including frozen Scene dumps and guide parity).

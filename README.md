@@ -7,6 +7,13 @@
 This is a TypeScript Cocos Editor extension inspired by the provided Unity vHierarchy source. It **never patches `app.asar`**. The renderer layer uses a reversible, private Hierarchy DOM/Vue overlay; it may need adjustments for other 3.8.x builds or future Editor updates. If node UUID metadata is unavailable, customization and node mutations are disabled rather than guessing a node.
 
 
+## Patch 9 — Scene dirty after Ctrl+S when toggling Active (still 0.1.0)
+
+- Fixed the Active checkbox / `A` shortcut transaction order. Previously `scene:set-property` with an undocumented `record: true` flag was followed by `scene:snapshot` **after** the property changed; this is not a reliable Undo/dirty transaction after saving.
+- Now `scene:begin-recording(nodeUuid)` is called **before** `scene:set-property`; `scene:end-recording(undoId)` commits a single Undo step after a successful mutation. On failure before commit, `scene:cancel-recording(undoId)` is called. The renderer never edits the read-only Hierarchy node directly.
+- A post-commit `scene:query-dirty` check verifies the Editor's unsaved status. If the Editor still reports `false`, try `scene:snapshot` once and query again. If the Scene remains clean, emit a visible console warning rather than silently treating the dirty transition as successful. **The successful property change is never automatically reverted or saved.**
+- Regression tests cover **Ctrl+S → toggle → dirty**, multiple save/toggle cycles, failed set-property, rollback of an open Undo transaction, and clean-state detection. The Editor 3.8.8 GUI still needs to confirm the actual title asterisk, Ctrl+Z/Ctrl+Y and save/reopen persistence. The local tests simulate the Editor IPC; they cannot prove Cocos runtime behavior.
+
 ## Patch 8 — Row-wide hover + action strip background + Layer icon spacing (still 0.1.0)
 
 - The **42px left Lock/Active strip** now has an actual full-height, pointer-receiving background element. Hovering its empty area triggers the same native row hover as hovering the node name; Lock remains to the left of the checkbox. The strip uses a subtle slate background with clearer hover/selection states, while native guide lines and click targets stay to its right. Background is behind both controls; no Scene data is modified.
@@ -67,7 +74,7 @@ See [the full phased feature-parity plan](https://github.com/PhuNope/cocos-vHier
 | Per-object color palette | 9 slots based on `VHierarchyPalette.cs`; supports recursive inheritance |
 | Per-object icons | Emoji icon chooser, recursive inheritance; **not** Unity-specific raster icons |
 | Component minimap | Removed per request; only native component icons (if enabled in Cocos preferences) remain |
-| Activation checkbox | Direct checkbox via `scene:query-node` / `scene:set-property` followed by `scene:snapshot`; rejects unknown/locked/readonly nodes |
+| Activation checkbox | Direct checkbox via `scene:query-node`, explicit `scene:begin-recording` / `scene:set-property` / `scene:end-recording`, and `scene:query-dirty`; rejects unknown/locked/readonly nodes |
 | Navigation bar and bookmarks | Toolbar, non-destructive search dimming, bookmark selection |
 | Shortcut E | Toggle expanded on hovered parent |
 | Shortcut Shift+E / Ctrl+Shift+E | Isolate / collapse (best effort, using native expand arrows) |
@@ -83,7 +90,7 @@ This build does **not** claim parity for Unity's SceneView focus, lighting windo
 
 Assignments, bookmarks and toggles are stored in `<project>/settings/vHierarchy.json`. Node appearance is keyed by Cocos node UUID. This is editor metadata and is not a runtime component, scene property, or exported game asset. If a node is removed or its UUID changes, an old appearance entry may remain until data-cleanup is implemented. Back up valuable scenes/prefabs before trying experimental Scene changes.
 
-The extension avoids arbitrary DOM mutation of the Scene's serialized values. Activation uses the Editor's Scene IPC with Undo recording; if Creator 3.8.8 returns a different shape or rejects the request, the plugin logs a warning and does not apply an optimistic state. Undo/Redo and saving/reopening must be tested in the running Editor.
+The extension avoids arbitrary DOM mutation of the Scene's serialized values. Activation uses an explicit begin/set/end Scene Undo transaction and checks native `query-dirty`; if Creator 3.8.8 returns a different shape or rejects the request, the plugin logs a warning and does not apply an optimistic state. Undo/Redo and saving/reopening must be tested in the running Editor.
 
 ## Development
 
@@ -109,7 +116,7 @@ If a test fails, use **Panel → vHierarchy → Diagnostics** and copy logs from
 
 ## Patch 3 (0.1.0)
 
-- Active checkbox commits via Scene IPC and calls `scene:snapshot` after a successful change, allowing Cocos to track unsaved Scene edits and Undo.
+- In Patch 3, Active checkbox originally called `scene:snapshot` after the change. This approach is superseded by the explicit Undo transaction and native dirty verification in Patch 9.
 - Live DOM observation refreshes lines immediately after expand/fold (1.4s scan is fallback).
 - Component dots/minimap are removed from row UI. The native Cocos show-component-icon preference is unchanged.
 - Native lock icon is moved into a 20px dedicated left-side gutter so it cannot cover clickable hierarchy guides.

@@ -70,47 +70,65 @@
     .tree-node:hover > ui-drag-item.drag-item::after,
     .tree-node[is-selected='true'] > ui-drag-item.drag-item::before,
     .tree-node[is-selected='true'] > ui-drag-item.drag-item::after {opacity:1}
-    .vh-icon { position:absolute; right:92px; top:2px; z-index:1; width:15px; height:15px; pointer-events:none; object-fit:contain; }
+    .vh-icon { position:relative; flex:0 0 15px; width:15px; height:15px; margin-left:2px; z-index:1; pointer-events:none; object-fit:contain; }
     .vh-emoji { width:auto; font-size:12px; line-height:15px; }
 
-    /* Keep Cocos' own right-side component icon untouched. The Active checkbox
-       participates in flex layout BEFORE that icon, and only appears on hover. */
-    .tree[data-vh-lock-gutter] { padding-left:20px !important; }
+    /* The left-hand action gutter mirrors Unity vHierarchy: native Lock first,
+       Active checkbox immediately to its RIGHT. Both use full 20px hit targets
+       so the cursor does not lose node hover while moving between controls.
+       Reserving space in the tree keeps native arrows and guide hit targets free. */
+    .tree[data-vh-lock-gutter] { padding-left:42px !important; }
     .tree[data-vh-lock-gutter] > .tree-node > .drag-item > ui-icon.lock {
       display:inline-flex !important; align-items:center; justify-content:center;
-      left:-20px !important; width:22px; height:20px; top:0;
+      left:-42px !important; width:22px; height:20px; top:0;
       z-index:4; opacity:0; pointer-events:auto !important;
     }
-    /* Hoverable lock remains in the hit-test tree even when visually hidden.
-       Its 22px hit target overlaps the row by 2px to bridge the gutter gap. */
     .tree[data-vh-lock-gutter] > .tree-node:hover > .drag-item > ui-icon.lock,
+    .tree[data-vh-lock-gutter] > .tree-node:focus-within > .drag-item > ui-icon.lock,
     .tree[data-vh-lock-gutter] > .tree-node > .drag-item > ui-icon.lock:hover,
     .tree[data-vh-lock-gutter] > .tree-node > .drag-item > ui-icon.lock[locked='true'] { opacity:1; }
     .tree[data-vh-lock-gutter] > .tree-node > .drag-item > ui-icon.lock[inside-locked] { opacity:.55; }
-    .vh-active {
-      position:relative; flex:0 0 14px; align-self:center; width:14px; height:14px;
-      z-index:2; accent-color:#70b58a; cursor:pointer; margin:0 4px 0 5px;
+    /* A label is the hit target, the real native checkbox stays keyboard-accessible.
+       The visual square is 14px; the hit target is a contiguous 20px cell. */
+    .vh-active-hit {
+      position:absolute; left:-20px; top:0; width:20px; height:20px;
+      display:flex; align-items:center; justify-content:center;
+      z-index:5; cursor:pointer; box-sizing:border-box;
       visibility:hidden; opacity:0; pointer-events:none;
     }
-    .tree-node:hover > .drag-item > .vh-active,
-    .tree-node:focus-within > .drag-item > .vh-active {
+    .tree-node:hover > .drag-item > .vh-active-hit,
+    .tree-node:focus-within > .drag-item > .vh-active-hit,
+    .tree-node > .drag-item > .vh-active-hit:hover {
       visibility:visible; opacity:1; pointer-events:auto;
     }
-    .vh-active[disabled] { opacity:.45; cursor:wait; }
-    /* Keep native ui-icon[default=asset][value=typescript] right aligned. */
-    /* Layer metadata is a separate sibling; never append it to ui-rename-input or
-       modify the Vue node.name (both native and toolbar search use that name). */
-    .tree-node[data-vh-has-layer] > .drag-item > ui-rename-input.name {
-      flex:0 1 var(--vh-node-name-width, 80px) !important;
-      width:var(--vh-node-name-width, 80px) !important;
-      min-width:0; max-width:calc(100% - 75px);
-      overflow:hidden; text-overflow:ellipsis; padding-right:2px;
+    .vh-active {
+      position:absolute; inset:0; width:100%; height:100%; margin:0;
+      cursor:pointer; opacity:0; z-index:1;
     }
-    .vh-node-layer { display:inline-flex; flex:0 0 auto; align-items:center; min-width:0;
-      margin-left:5px; padding-left:6px; border-left:1px solid rgba(161,176,192,.4);
+    .vh-active-box {
+      display:block; position:relative; width:14px; height:14px;
+      box-sizing:border-box; border:1px solid #89949e; border-radius:2px;
+      background:rgba(24,30,35,.34); pointer-events:none;
+    }
+    .vh-active:checked + .vh-active-box::after {
+      content:''; position:absolute; left:3px; top:2px; width:6px; height:4px;
+      border-left:2px solid #dfe7ee; border-bottom:2px solid #dfe7ee;
+      transform:rotate(-45deg);
+    }
+    .vh-active:hover + .vh-active-box,
+    .vh-active:focus-visible + .vh-active-box {
+      border-color:#75b6ff; box-shadow:0 0 0 1px rgba(117,182,255,.48);
+    }
+    .vh-active:disabled + .vh-active-box { opacity:.45; cursor:wait; }
+    /* Keep the Cocos rightmost TypeScript/component icon intact. Name uses
+       its NATIVE flex:1, pushing a read-only Layer label immediately LEFT
+       of that icon instead of displaying Layer beside the node name. */
+    .vh-node-layer { display:inline-flex; flex:0 0 auto; align-items:center;
+      min-width:0; margin-left:auto; margin-right:4px; padding-left:6px;
+      border-left:1px solid rgba(161,176,192,.4);
       color:var(--color-normal-contrast, #a3b1bf); opacity:.68;
       font:500 10px/15px Arial,sans-serif; white-space:nowrap; user-select:none;
-      pointer-events:none; max-width:115px; overflow:hidden; text-overflow:ellipsis;
+      pointer-events:none; max-width:96px; overflow:hidden; text-overflow:ellipsis;
     }
     .tree-node[is-selected='true'] .vh-node-layer {opacity:.84;}
     .tree[searching] .vh-node-layer, .tree-node[state='rename'] .vh-node-layer {display:none !important;}
@@ -320,39 +338,41 @@
       }
     }
   }
-  /** Add a visual-only, non-interactive sibling of the native rename control.
-   * Search must continue to operate on `node.name`, not rendered metadata.
-   * The badge is hidden when native search/rename or a very narrow row is active.
+  /** Render Layer in the RIGHT metadata area: [node name ...] [Layer] [Cocos icon].
+   * Never alter node.name or ui-rename-input.value: native search and rename
+   * must see the exact original name. Hide Layer if insufficient free width.
    */
   function drawLayer(item: Item): void {
     const old = item.drag.querySelector(':scope > .vh-node-layer') as HTMLElement | null;
     const clear = (): void => {
       old?.remove();
       changeAttr(item.row, 'data-vh-has-layer');
-      item.row.style.removeProperty('--vh-node-name-width');
+      item.row.style.removeProperty('--vh-node-name-width'); // clean up earlier patches
     };
     if (!state.options.enabled || !state.options.showNodeLayers || !item.uuid || !item.nameEl ||
       item.searching || item.node?.isScene || item.row.getAttribute('state') === 'rename') { clear(); return; }
     const label = layerLookup.get(item.uuid, item.node?.layer);
     if (!label) { clear(); return; }
 
-    // Measure native name, not all row text. Leave space for a Layer badge and
-    // the Active checkbox, and let long names ellipsize instead of overlapping.
     const font = getComputedStyle(item.nameEl).font || getComputedStyle(item.drag).font || '12px Arial';
     if (textContext) textContext.font = font;
-    const naturalNameWidth = Math.ceil((textContext?.measureText(item.name).width ?? item.name.length * 7) + 12);
-    const layerWidth = Math.min(115, Math.ceil((textContext?.measureText(label).width ?? label.length * 7) + 16));
-    const rightControls = state.options.activationToggle ? 28 : 8;
-    const available = item.drag.clientWidth - item.nameEl.offsetLeft - rightControls;
-    if (available < layerWidth + 32) { clear(); return; }
-    const width = Math.max(32, Math.min(naturalNameWidth, available - layerWidth - 6));
-    guideProp(item.row, '--vh-node-name-width', `${width}px`);
-    changeAttr(item.row, 'data-vh-has-layer','true');
+    const layerWidth = Math.min(96, Math.ceil((textContext?.measureText(label).width ?? label.length * 7) + 14));
+    const nativeComponent = item.drag.querySelector(':scope > ui-icon[default="asset"][value="typescript"]') as HTMLElement | null;
+    const componentWidth = nativeComponent ? (nativeComponent.offsetWidth || 16) + 4 : 0;
+    const available = item.drag.clientWidth - item.nameEl.offsetLeft - componentWidth;
+    // Always leave enough space for the native node name, even at deep nesting.
+    if (available < layerWidth + 40) { clear(); return; }
+    item.row.style.removeProperty('--vh-node-name-width');
+    changeAttr(item.row, 'data-vh-has-layer', 'true');
     const badge = old || el('span', 'vh-node-layer');
     badge.setAttribute('aria-hidden', 'true');
-    badge.title = ''; // metadata is non-interactive; no tooltips affect search input
+    badge.title = '';
     if (badge.textContent !== label) badge.textContent = label;
-    if (badge.previousElementSibling !== item.nameEl) item.nameEl.insertAdjacentElement('afterend', badge);
+    // A trailing native component icon is LAST in Cocos 3.8.8's template.
+    // Position the badge directly before it; otherwise badge is rightmost.
+    if (nativeComponent) {
+      if (badge.nextElementSibling !== nativeComponent) item.drag.insertBefore(badge, nativeComponent);
+    } else if (badge !== item.drag.lastElementChild) item.drag.appendChild(badge);
   }
 
   function drawItem(item: Item, index: number, ancestors: Item[]): void {
@@ -386,40 +406,50 @@
         || ensureControl(item, 'vh-icon', () => el('span','vh-icon vh-emoji'));
       if (marker.textContent !== displayIcon) marker.textContent = displayIcon;
     } else iconEl?.remove();
+    // Custom palette icon belongs beside the native node-type glyph, NOT on
+    // the far right where Cocos' component indicator and Layer now live.
+    const paletteIcon = item.drag.querySelector(':scope > .vh-icon');
+    if (paletteIcon && item.nameEl && paletteIcon.nextElementSibling !== item.nameEl)
+      item.drag.insertBefore(paletteIcon, item.nameEl);
     drawLayer(item);
     // Never hide or replace Cocos' own native component icon on the right.
     // Component minimap has been removed by product request; clean up remnants
     // from any previously injected renderer instance.
     item.drag.querySelector(':scope > .vh-components')?.remove();
     changeAttr(item.row, 'data-vh-active-control', enabled && opts.activationToggle && !!item.uuid && !item.node?.isScene && !item.node?.readonly ? 'true' : undefined);
-    const existing = item.drag.querySelector(':scope > .vh-active') as HTMLElement | null;
+    // Remove any direct input from an earlier patch before inserting the
+    // left-gutter control. Never insert near the native right-side icon.
+    item.drag.querySelector(':scope > input.vh-active')?.remove();
+    const existing = item.drag.querySelector(':scope > .vh-active-hit') as HTMLElement | null;
     if (enabled && opts.activationToggle && item.uuid && !item.node?.isScene && !item.node?.readonly) {
-      if (existing && existing.tagName !== 'INPUT') existing.remove();
-      let checkbox = item.drag.querySelector(':scope > input.vh-active') as HTMLInputElement | null;
-      if (!checkbox) {
-        checkbox = el('input','vh-active');
+      let holder = existing;
+      let checkbox = holder?.querySelector('input.vh-active') as HTMLInputElement | null;
+      if (!holder || !checkbox) {
+        holder?.remove();
+        holder = el('label', 'vh-active-hit');
+        holder.title = 'Enable / Disable node (A)';
+        checkbox = el('input', 'vh-active');
         checkbox.type = 'checkbox';
-        checkbox.title = 'Enable / Disable node (A)';
         checkbox.setAttribute('aria-label', 'Node Active');
-        checkbox.addEventListener('mousedown',e=>e.stopPropagation());
-        checkbox.addEventListener('click',e=>e.stopPropagation());
-        checkbox.addEventListener('dblclick',e=>e.stopPropagation());
-        checkbox.addEventListener('change',e=>{
+        const box = el('span', 'vh-active-box');
+        box.setAttribute('aria-hidden', 'true');
+        holder.append(checkbox, box);
+        holder.addEventListener('mousedown', e => e.stopPropagation());
+        holder.addEventListener('click', e => e.stopPropagation());
+        holder.addEventListener('dblclick', e => e.stopPropagation());
+        checkbox.addEventListener('change', e => {
           e.stopPropagation();
-          // The Scene dump is authoritative; the checkbox is only a command UI.
-          const clicked = views.find(v=>v.row===checkbox!.closest('.tree-node'));
+          // Vue's frozen node is read-only: the Scene IPC command is authoritative.
+          const clicked = views.find(v => v.row === checkbox!.closest('.tree-node'));
           if (clicked) void toggleActive(clicked);
         });
-        item.drag.appendChild(checkbox);
       }
-      // Native component indicator is the last, right-aligned icon in Cocos' template.
-      // Insert before it so the two controls never overlap at any panel width.
-      const nativeComponent = item.drag.querySelector(':scope > ui-icon[default="asset"][value="typescript"]');
-      if (nativeComponent) {
-        if (checkbox.nextElementSibling !== nativeComponent) item.drag.insertBefore(checkbox, nativeComponent);
-      } else if (checkbox !== item.drag.lastElementChild) {
-        item.drag.appendChild(checkbox);
-      }
+      // Lock is native absolute-positioned; keep input next in DOM too, and
+      // CSS places it in the 20px cell immediately to Lock's right.
+      const nativeLock = item.drag.querySelector(':scope > ui-icon.lock');
+      if (nativeLock) {
+        if (holder.previousElementSibling !== nativeLock) nativeLock.insertAdjacentElement('afterend', holder);
+      } else if (holder.parentElement !== item.drag) item.drag.appendChild(holder);
       if (!VHierarchySceneCommands.isPending(item.uuid)) checkbox.checked = item.node?.active !== false;
       checkbox.disabled = VHierarchySceneCommands.isPending(item.uuid) || !!item.node?.locked;
     } else existing?.remove();
@@ -543,7 +573,7 @@
         !state.options.enabled || !state.options.hierarchyLines || !state.options.foldOnGuideClick) return null;
       const target = e.target as Element | null;
       if (!(target instanceof Element) || target.closest(
-        '.arrow, ui-icon, ui-asset-image, ui-rename-input, input, textarea, button, [contenteditable], .vh-toolbar, .vh-components')) return null;
+        '.arrow, ui-icon, ui-asset-image, ui-rename-input, input, label, textarea, button, [contenteditable], .vh-active-hit, .vh-toolbar, .vh-components')) return null;
       const row = target.closest('.tree-node') as HTMLElement | null;
       const item = views.find(view => view.row === row);
       if (!item?.guide || item.searching || row?.getAttribute('state') === 'rename') return null;
@@ -752,7 +782,7 @@
         clearGuides(h);
         h.style.removeProperty('--vh-row-color');
         h.style.removeProperty('--vh-node-name-width');
-        for(const child of h.querySelectorAll(':scope > .drag-item > .vh-icon,:scope > .drag-item > .vh-components,:scope > .drag-item > .vh-active,:scope > .drag-item > .vh-node-layer'))child.remove();
+        for(const child of h.querySelectorAll(':scope > .drag-item > .vh-icon,:scope > .drag-item > .vh-components,:scope > .drag-item > .vh-active,:scope > .drag-item > .vh-active-hit,:scope > .drag-item > .vh-node-layer'))child.remove();
       }
       for(const bar of (r as Element).querySelectorAll?.('.vh-toolbar')||[])bar.remove();
       for(const css of (r as Element).querySelectorAll?.('style[data-vh-style]')||[])css.remove();

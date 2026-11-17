@@ -70,7 +70,11 @@ test('disposal avoids late redraw and cache updates', async () => {
 test('layer rendering is strictly metadata outside rename input and native search',()=>{
   const renderer = fs.readFileSync(path.join(__dirname,'../dist/renderer/renderer.js'),'utf8');
   assert.match(renderer,/badge\.setAttribute\('aria-hidden', 'true'\)/);
-  assert.match(renderer,/item\.nameEl\.insertAdjacentElement\('afterend', badge\)/);
+  assert.match(renderer,/item\.drag\.insertBefore\(badge, nativeComponent\)/);
+  assert.match(renderer,/else if \(badge !== item\.drag\.lastElementChild\)\s*item\.drag\.appendChild\(badge\)/);
+  assert.match(renderer,/margin-left:auto; margin-right:4px/);
+  assert.match(renderer,/ui-icon\[default="asset"\]\[value="typescript"\]/);
+  assert.doesNotMatch(renderer,/badge\.textContent\s*\+=/);
   assert.match(renderer,/item\.searching \|\| item\.node\?\.isScene/);
   assert.match(renderer,/!item\.name\.toLowerCase\(\)\.includes\(searchText\)/);
   assert.doesNotMatch(renderer,/node\.name\s*=/);

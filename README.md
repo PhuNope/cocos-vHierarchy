@@ -7,9 +7,16 @@
 This is a TypeScript Cocos Editor extension inspired by the provided Unity vHierarchy source. It **never patches `app.asar`**. The renderer layer uses a reversible, private Hierarchy DOM/Vue overlay; it may need adjustments for other 3.8.x builds or future Editor updates. If node UUID metadata is unavailable, customization and node mutations are disabled rather than guessing a node.
 
 
+## Patch 6 — Unity-style Active checkbox position / Layer alignment (still 0.1.0)
+
+- Align controls with the provided Unity *Activation toggle* reference: **left to right: native Lock → Active checkbox → native Hierarchy arrow / node**. Reserve a 42px left action gutter (Lock 22px + checkbox 20px), with contiguous hover targets so controls do not disappear during cursor movement. Checkbox looks like a small 14px dark square with a light tick and blue hover outline; it is visible only when hovering the node or focusing a control. Active mutations still use Scene IPC + snapshot, not Vue assignments.
+- Right-hand metadata reads **left to right: Layer → original Cocos rightmost component/TypeScript icon**, so reading from the right edge inward gives **Cocos component icon → Layer**. Keep the native icon in place and insert the read-only Layer label just before it; never alter `node.name`, native rename values, or Hierarchy search. Hide metadata when native search/rename is active or the row is narrow; ellipsize the node name using its native flex layout.
+- Move optional vHierarchy palette icons near the node's own name/icon, avoiding collisions with the Layer/native-component area. Native component display is always Cocos-owned; no custom component dots are added.
+- Regression coverage includes gap-free Lock/checkbox hit areas, Layer adjacency to the native component indicator, and untouched node name/search. **Real Creator 3.8.8 GUI verification is still required**, especially while dragging between native Lock and the hover-only checkbox.
+
 ## Patch 5 — Native controls, larger guide hit targets, safe Scene Selector (still 0.1.0)
 
-- Keep **Cocos' native right-side TypeScript/component icon**. The vHierarchy Active checkbox now occupies a separate flex slot **before** the native icon and is visible only while hovering the row (or while it has keyboard focus). The checkbox does not replace, hide, or overwrite native icon DOM; it commits using Scene IPC and snapshot as before.
+- Keep **Cocos' native right-side TypeScript/component icon**. The current Patch 6 Active checkbox occupies the separate left gutter next to Lock and is visible only while hovering the row (or while it has keyboard focus). The checkbox does not replace, hide, or overwrite native icon DOM; it commits using Scene IPC and snapshot as before.
 - Increase the visible-line click tolerance from 4 to **8 CSS pixels** for easier folding, while excluding the native arrow, icon, rename input, Active checkbox, and keyboard-modifier clicks. The same actual line geometry and parent selection are retained.
 - Repair lock hover: retain the native `ui-icon.lock` at the **left gutter**, always keep its hit area present but visually hidden until row hover/lock hover; its 22px hit target overlaps the row by 2px to avoid a gap where it disappears. Locked icons remain visible.
 - Scene selector: use AssetDB 3.8.8's `query-assets({ ccType: 'cc.SceneAsset', extname: '.scene' })`, filter valid imported project Scene assets, and **revalidate `query-asset-info` before opening**. Await `scene:open-scene` with `Editor.Message.request` (not `send`) so errors are displayed in the popup instead of silently closing. The popup has **× / Escape / outside-click close**, plus Refresh. Opening still requires the save warning/confirmation. A rejected/stale Scene leaves the popup open with an error.
@@ -18,7 +25,7 @@ This is a TypeScript Cocos Editor extension inspired by the provided Unity vHier
 ## Patch 4 — Node Layer labels (still 0.1.0)
 
 - Read each visible node's Layer from the supported `scene:query-node` dump. Cocos's Hierarchy tree summary lacks the Layer field. A bounded (3 in-flight) asynchronous cache avoids requesting Layer on every repaint; polling refreshes stale cache data.
-- Show a subtle `NodeName │ LAYER` label beside the *native* name. The badge is a separate, pointer-transparent sibling of `ui-rename-input`; the real node name, rename value and native search are unmodified. vHierarchy's own toolbar search still matches **node names only**, not Layer labels.
+- Show a subtle, right-aligned Layer label immediately left of the native rightmost component indicator. The badge is a separate, pointer-transparent sibling of `ui-rename-input`; the real node name, rename value and native search are unmodified. vHierarchy's own toolbar search still matches **node names only**, not Layer labels.
 - Hide badges during native Hierarchy search, during rename and when horizontal space is too narrow. Names are truncated only when needed; checkbox, lock and fold guides retain their own hit areas.
 - Custom Layer labels come from `layer.enumList` in the Scene dump when present; otherwise use Cocos built-ins or a numeric hex value rather than inventing a custom name. Layer controls are display-only; no Scene snapshot is made.
 - The new **Show node layer next to its name** setting is enabled by default and persisted per project. GUI testing on Editor 3.8.8, including custom layers, remains necessary.
@@ -42,7 +49,7 @@ See [the full phased feature-parity plan](https://github.com/PhuNope/cocos-vHier
 1. Extract `vHierarchy-0.1.0-test.zip` into your project's `extensions` directory. The resulting path must be `<cocos-project>/extensions/cocos-vhierarchy/package.json`.
 2. In Cocos Creator, refresh the extension from **Extension Manager**, or restart the Editor.
 3. Open the native **Hierarchy** panel. The top bar displays `vH`. Open the **Panel → vHierarchy → Settings / Palette** menu to configure it.
-4. Hover any node, then **Alt + right-click** for color/icon, recursive application, or reset. Hover a node to reveal its Active checkbox; the native Cocos right-side component icon is preserved.
+4. Hover any node, then **Alt + right-click** for color/icon, recursive application, or reset. Hover a node to reveal its Active checkbox directly right of Lock; the native Cocos right-side component icon is preserved, with the Layer just to its left.
 5. In the toolbar, type a node name to dim nonmatching rows; the star bookmarks the last hovered node. Click a bookmark to select it. Right-click a bookmark to remove it.
 
 ### Enabled features in 0.1.0

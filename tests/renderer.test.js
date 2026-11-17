@@ -15,8 +15,8 @@ test('renderer observes native hierarchy mutations instead of waiting for interv
   assert.match(renderer, /for \(const watcher of treeObservers.values\(\)\)\s*watcher.disconnect\(\)/);
 });
 test('lock moves to dedicated left gutter rather than crossing guide lines',()=>{
-  assert.match(renderer, /padding-left:20px !important/);
-  assert.match(renderer, /left:-20px !important/);
+  assert.match(renderer, /padding-left:42px !important/);
+  assert.match(renderer, /left:-42px !important/);
   assert.match(renderer, /data-vh-lock-gutter/);
 });
 test('removes old component dots and never creates component minimap holder',()=>{
@@ -25,12 +25,28 @@ test('removes old component dots and never creates component minimap holder',()=
   assert.match(renderer,/querySelector\(':scope > \.vh-components'\)\?\.remove\(\)/);
 });
 
-test('checkbox only shows on node hover and never replaces Cocos component icon',()=>{
+test('checkbox stays in the contiguous cell immediately RIGHT of native lock',()=>{
+  assert.match(renderer,/\.vh-active-hit\s*\{\s*position:absolute; left:-20px; top:0; width:20px; height:20px/);
   assert.match(renderer,/visibility:hidden; opacity:0; pointer-events:none/);
-  assert.match(renderer,/tree-node:hover > \.drag-item > \.vh-active/);
-  assert.match(renderer,/ui-icon\[default="asset"\]\[value="typescript"\]/);
-  assert.match(renderer,/insertBefore\(checkbox, nativeComponent\)/);
+  assert.match(renderer,/tree-node:hover > \.drag-item > \.vh-active-hit/);
+  assert.match(renderer,/holder\.append\(checkbox, box\)/);
+  assert.match(renderer,/nativeLock\.insertAdjacentElement\('afterend', holder\)/);
+  assert.match(renderer,/checkbox\.type = 'checkbox'/);
+  assert.match(renderer,/\.vh-active:checked \+ \.vh-active-box::after/);
+  assert.doesNotMatch(renderer,/insertBefore\(checkbox, nativeComponent\)/);
   assert.doesNotMatch(renderer,/nativeComponent\.remove\(/);
+});
+test('left action slots have gap-free 42px hit regions, preserving guide space',()=>{
+  const lock = /left:-42px !important; width:22px; height:20px/;
+  const active = /left:-20px; top:0; width:20px; height:20px/;
+  assert.match(renderer,lock);
+  assert.match(renderer,active);
+  assert.match(renderer,/\.tree\[data-vh-lock-gutter\] \{ padding-left:42px !important/);
+  assert.match(renderer,/label, textarea, button, \[contenteditable\], \.vh-active-hit/);
+});
+test('palette icon is next to node name and does not cover right-aligned layer',()=>{
+  assert.match(renderer,/item\.drag\.insertBefore\(paletteIcon, item\.nameEl\)/);
+  assert.match(renderer,/\.vh-icon \{ position:relative; flex:0 0 15px/);
 });
 test('hoverable native lock has a full-width gutter target and never display none',()=>{
   assert.match(renderer,/display:inline-flex !important/);

@@ -9,9 +9,9 @@
   interface Appearance { color?: number; icon?: string; iconColor?: string; recursiveColor?: boolean; recursiveIcon?: boolean; }
   interface Bookmark { uuid: string; name: string; }
   interface CustomIcon { id: string; name: string; }
-  interface State { options: Opts; appearances: Record<string, Appearance>; bookmarks: Bookmark[]; customIcons: CustomIcon[]; }
-  interface TreeDump { uuid?: string; name?: string; depth?: number; parent?: string; active?: boolean; locked?: boolean; readonly?: boolean; isScene?: boolean; components?: Array<{ type?: string; extends?: string[] }>; prefab?: { state?: number }; layer?: unknown; }
-  interface Item { guide?: { group: Item[]; index: number; result: VHierarchyGuides.Result }; ancestorIds?: string[]; row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; nameEl: HTMLElement | null; depth: number; padding: number; margin: number; anchor: number; searching: boolean; }
+  interface State { options: Opts; appearances: Record<string, Appearance>; prefabAppearances: Record<string, Appearance>; bookmarks: Bookmark[]; customIcons: CustomIcon[]; }
+  interface TreeDump { uuid?: string; name?: string; depth?: number; parent?: string; active?: boolean; locked?: boolean; readonly?: boolean; isScene?: boolean; components?: Array<{ type?: string; extends?: string[] }>; prefab?: { state?: number; assetUuid?: string; isAddedChild?: boolean }; level?: string; path?: string; isPrefabRoot?: boolean; layer?: unknown; }
+  interface Item { guide?: { group: Item[]; index: number; result: VHierarchyGuides.Result }; prefabKey?: string | null; ancestorIds?: string[]; row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; nameEl: HTMLElement | null; depth: number; padding: number; margin: number; anchor: number; searching: boolean; }
   interface Hook { refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
@@ -37,7 +37,7 @@
   const DEFAULT: State = {
     options: { enabled:true, navigationBar:true, activationToggle:true, hierarchyLines:true,
       zebraStriping:true, minimalMode:false, sceneSelector:false, keyboardShortcuts:true, foldOnGuideClick:true,
-      showNodeLayers:true, colorGradientsEnabled:true, guideMode:'tree', colorBrightness:1, colorSaturation:1 }, appearances:{}, bookmarks:[], customIcons:[],
+      showNodeLayers:true, colorGradientsEnabled:true, guideMode:'tree', colorBrightness:1, colorSaturation:1 }, appearances:{}, prefabAppearances:{}, bookmarks:[], customIcons:[],
   };
   const CSS = `
     .vh-toolbar { display:flex; align-items:center; gap:4px; height:27px; padding:0 6px; box-sizing:border-box; border-bottom:1px solid var(--color-default-border, #3d454c); background:var(--color-normal-fill, #292e35); color:var(--color-normal-contrast,#ced7df); overflow:hidden; font-size:11px; }
@@ -48,17 +48,25 @@
     .vh-bookmarks { display:flex; gap:2px; flex:0 1 auto; min-width:0; overflow:hidden; }
     .vh-bookmark { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; max-width:65px; color:#ffd18c; }
     .tree-node[data-vh-stripe="1"] > .drag-item { background-color:rgba(125,140,160,.055); }
-    .tree-node[data-vh-tint] > .drag-item { background-image:var(--vh-row-gradient) !important; }
+    .tree-node[data-vh-tint] > .drag-item,
+    .tree-node[is-prefab-node][data-vh-tint] > ui-drag-item.drag-item,
+    .tree-node[is-prefab-root][data-vh-tint] > ui-drag-item.drag-item {
+      background-image:var(--vh-row-gradient) !important;
+    }
+    /* Native prefab text inherits Cocos' green/red color from is-prefab-node.
+       The vHierarchy palette never applies color to ui-rename-input.name. */
     /* Creator applies --color-active-fill as an opaque native selection background.
        Replace it ONLY for palette-colored rows, not for ordinary selections.
        This selected fill and its accent are derived from the actual node color. */
-    .tree-node[is-selected="true"][data-vh-tint] > .drag-item {
+    .tree-node[is-selected="true"][data-vh-tint] > .drag-item,
+    .tree-node[is-selected="true"][is-prefab-node][data-vh-tint] > ui-drag-item.drag-item {
       background-color:var(--vh-selected-base) !important;
       background-image:var(--vh-selected-gradient) !important;
       box-shadow:inset 3px 0 0 var(--vh-selected-accent) !important;
     }
     /* Keep Creator's rename editing background neutral. */
-    .tree-node[state="rename"][data-vh-tint] > .drag-item {
+    .tree-node[state="rename"][data-vh-tint] > .drag-item,
+    .tree-node[state="rename"][is-prefab-node][data-vh-tint] > ui-drag-item.drag-item {
       background-color:transparent !important;
       background-image:none !important;
       box-shadow:none !important;
@@ -294,6 +302,11 @@
   let observer: MutationObserver | null = null;
   const treeObservers = new Map<HTMLElement, MutationObserver>();
   const layerLookup = new VHierarchyLayers.Lookup(uuid => req('scene','query-node', uuid), () => schedule());
+  const prefabPromotions = new Set<string>();
+  const priorRows = new WeakMap<HTMLElement, {uuid: string; path: string; appearance: Appearance}>();
+  // Same-tree path fallback covers Prefab conversion when Cocos REPLACES the
+  // Vue row element entirely. Cleared on native Scene ready/close broadcasts.
+  let previousTreePaths = new WeakMap<HTMLElement, Map<string, {uuid: string; path: string; appearance: Appearance}>>();
   let lastHovered: Item | null = null;
   let searchText = '';
   let views: Item[] = [];
@@ -394,15 +407,21 @@
       searching:!!row.closest('.tree[searching]'), depth:node?.depth ?? 0 };
   }
   type ResolvedAppearance = Appearance & { colorInherited: boolean };
-  function nearestAppearance(item: Item, ancestorIds: string[]): ResolvedAppearance {
-    const a = state.appearances[item.uuid] || {};
+  function ownAppearance(item: Item): Appearance {
+    return {
+      ...(item.prefabKey ? state.prefabAppearances?.[item.prefabKey] : undefined),
+      ...(state.appearances[item.uuid] || {}),
+    };
+  }
+  function nearestAppearance(item: Item, ancestors: Item[]): ResolvedAppearance {
+    const a = ownAppearance(item);
     let color: number | undefined;
     let icon: string | undefined;
     let iconColor: string | undefined;
-    for (const id of ancestorIds) {
-      const parent = state.appearances[id];
-      if (parent?.recursiveColor && parent.color !== undefined) color = parent.color;
-      if (parent?.recursiveIcon && parent.icon) { icon = parent.icon; iconColor = parent.iconColor; }
+    for (const ancestor of ancestors) {
+      const parent = ownAppearance(ancestor);
+      if (parent.recursiveColor && parent.color !== undefined) color = parent.color;
+      if (parent.recursiveIcon && parent.icon) { icon = parent.icon; iconColor = parent.iconColor; }
     }
     return { ...a, color: a.color ?? color, icon: a.icon ?? icon, iconColor: a.iconColor ?? (a.icon ? undefined : iconColor), colorInherited: a.color === undefined && color !== undefined };
   }
@@ -511,7 +530,7 @@
     changeAttr(item.row, 'data-vh-stripe', enabled && opts.zebraStriping ? String(index % 2) : undefined);
     changeAttr(item.row, 'data-vh-compact', enabled && opts.minimalMode ? 'true' : undefined);
     changeAttr(item.row, 'data-vh-dim', enabled && searchText && !item.name.toLowerCase().includes(searchText) ? 'true' : undefined);
-    const inherited: ResolvedAppearance = item.uuid ? nearestAppearance(item, ancestors.map(a => a.uuid)) : { colorInherited: false };
+    const inherited: ResolvedAppearance = item.uuid ? nearestAppearance(item, ancestors) : { colorInherited: false };
     if (enabled && inherited.color !== undefined) {
       // Precomputed once per scan; avoid per-node HSL conversion in large Scenes.
       const paint = tints[inherited.color]?.[inherited.colorInherited ? 1 : 0] ?? tints[0][0];
@@ -668,13 +687,16 @@
         if (m.type === 'attributes') return true; // filtered to native Vue attributes
         if (m.target === tree) return true; // added/removed direct rows
         const changed = [...m.addedNodes, ...m.removedNodes];
-        return changed.some(n => n instanceof Element &&
-          (n.matches('.tree-node') || !!n.querySelector('.tree-node')));
+        return changed.some(n => n instanceof Element && (
+          n.matches('.tree-node,ui-rename-input,ui-asset-image,ui-icon:not(.lock),.arrow') ||
+          !!n.querySelector('.tree-node,ui-rename-input,ui-asset-image')
+        ));
       });
       if (nativeChange) schedule();
     });
     watcher.observe(tree, { childList:true, subtree:true, attributes:true,
-      attributeFilter:['is-expand','is-parent','is-active','is-selected','is-animating','state','searching'] });
+      attributeFilter:['is-expand','is-parent','is-active','is-selected','is-animating','state','searching',
+        'is-prefab-node','is-prefab-root','is-prefab-nested'] });
     treeObservers.set(tree, watcher);
   }
   function pruneTreeObservers(): void {
@@ -723,14 +745,52 @@
           const geometry = VHierarchyGuides.calculate(group.map(i=>({padding:i.padding,margin:i.margin,anchor:i.anchor,
             reportedDepth:Number.isInteger(i.node?.depth)?i.node!.depth:null,searching:i.searching})));
           const stack: Item[]=[];
+          const earlierPaths = previousTreePaths.get(tree);
+          const nextPaths = new Map<string, {uuid: string; path: string; appearance: Appearance}>();
+          const ambiguousPaths = new Set<string>();
           for (let i = 0; i < group.length; i++) {
             const item=group[i]; item.depth=geometry.nodes[i].depth;
             if (!geometry.nodes[i].valid) { stack.length=0; drawItem(item,i,[],tints); views.push(item); continue; }
             stack.length=Math.min(stack.length,item.depth);
             item.ancestorIds=stack.map(parent=>parent.uuid).filter(Boolean);
+            item.prefabKey=VHierarchyPrefabs.keyFor(item.node,stack.map(parent=>parent.node));
+            // Retain decorated nodes when Cocos links them to a prefab and
+            // replaces the row's node UUID. Only migrate if the SAME native row
+            // still represents the same full hierarchy path, to avoid leaking
+            // styles onto unrelated nodes from other scenes.
+            const path=item.node?.path || '';
+            const previous = priorRows.get(item.row) || (path && !ambiguousPaths.has(path) ? earlierPaths?.get(path) : undefined);
+            if (item.prefabKey && previous && previous.uuid !== item.uuid &&
+                previous.path && previous.path === item.node?.path &&
+                !state.appearances[item.uuid] && !state.prefabAppearances?.[item.prefabKey] &&
+                Object.keys(previous.appearance).length) {
+              const key=item.prefabKey;
+              if (!prefabPromotions.has(key)) {
+                prefabPromotions.add(key);
+                void req('cocos-vhierarchy','set-appearance',item.uuid,previous.appearance,key)
+                  .catch(error=>logError('prefab appearance migration',error))
+                  .finally(()=>prefabPromotions.delete(key));
+              }
+            } else if (item.prefabKey && state.appearances[item.uuid] &&
+                       !state.prefabAppearances?.[item.prefabKey]) {
+              const key=item.prefabKey;
+              if (!prefabPromotions.has(key)) {
+                prefabPromotions.add(key);
+                void req('cocos-vhierarchy','promote-prefab-appearance',item.uuid,key)
+                  .catch(error=>logError('prefab appearance promotion',error))
+                  .finally(()=>prefabPromotions.delete(key));
+              }
+            }
             drawItem(item,i,stack.slice(),tints);
+            const snapshot = {uuid:item.uuid,path,appearance:ownAppearance(item)};
+            priorRows.set(item.row,snapshot);
+            if (path) {
+              if (nextPaths.has(path)) { nextPaths.delete(path); ambiguousPaths.add(path); }
+              else if (!ambiguousPaths.has(path)) nextPaths.set(path,snapshot);
+            }
             views.push(item); stack[item.depth]=item;
           }
+          previousTreePaths.set(tree,nextPaths);
           updateGuides(group);
           listen(rootHost);
         }
@@ -836,7 +896,7 @@
     // user intent wins instead of an older response overwriting the new state.
     const previous=appearanceWrites.get(item.uuid) || Promise.resolve();
     const writing=previous.catch(()=>{}).then(async()=>{
-      const ok=await req('cocos-vhierarchy','set-appearance',item.uuid,next);
+      const ok=await req('cocos-vhierarchy','set-appearance',item.uuid,next,item.prefabKey || undefined);
       if(!ok)throw new Error(`Appearance rejected by extension (node ID length: ${item.uuid.length}; fields: ${Object.keys(next).join(', ')})`);
     });
     appearanceWrites.set(item.uuid,writing);
@@ -881,7 +941,7 @@
     return wrap;
   }
   function showPalette(item: Item,x: number,y: number): void {
-    const current: Appearance={...(state.appearances[item.uuid] || {})};
+    const current: Appearance={...ownAppearance(item)};
     const wrap=popup('Palette · '+item.name,x,y);
     wrap.append(el('span','','Color'));
     const colors=el('div','vh-colors');
@@ -891,8 +951,8 @@
     const inheritedColor=():number|undefined=>{
       // Follow the same ancestor order as drawItem; the closest recursive parent wins.
       let slot: number|undefined;
-      for(const id of item.ancestorIds || []) {
-        const parent=state.appearances[id];
+      for(const ancestor of views.filter(v => item.ancestorIds?.includes(v.uuid))) {
+        const parent=ownAppearance(ancestor);
         if(parent?.recursiveColor && parent.color!==undefined)slot=parent.color;
       }
       return slot;
@@ -1147,11 +1207,15 @@
   }
   /** Forward the native Cocos scene:change-node broadcast to the cached Layer data. */
   function sceneNodeChanged(ids: string[] | null): void {
-    if (stopped || !state.options.enabled || !state.options.showNodeLayers) return;
-    if (ids?.length) for (const uuid of new Set(ids)) layerLookup.invalidate(uuid);
-    else layerLookup.invalidateAll(views.map(item => item.uuid).filter(Boolean));
-    // The query completion schedules a render only if the resolved label changed.
-    // Keep the native node name and search inputs untouched.
+    if (stopped) return;
+    if (ids === null) previousTreePaths = new WeakMap();
+    if (state.options.enabled && state.options.showNodeLayers) {
+      if (ids?.length) for (const uuid of new Set(ids)) layerLookup.invalidate(uuid);
+      else layerLookup.invalidateAll(views.map(item => item.uuid).filter(Boolean));
+    }
+    // Prefab linking/instantiation changes native row identity and appearance,
+    // even when the optional Layer labels feature has been disabled.
+    schedule();
   }
   function refresh(): void {schedule();}
   function setIcons(next: Record<string,string>): void { iconAssets={...next};schedule(); }
@@ -1167,7 +1231,7 @@
   function applyState(input: State): void { if (!input?.options) return; state=input; schedule(); }
   function stats(): unknown { return { version:'0.1.0',scans,panelCount,visibleRows:views.length,vueRows,hasActiveNode:!!lastHovered?.uuid,lastError }; }
   function stop(): void {
-    stopped=true; appearanceWrites.clear(); googleFontLink?.remove();googleFontLink=null; layerLookup.dispose(); if(timer)clearInterval(timer);observer?.disconnect();closePopup();
+    stopped=true; appearanceWrites.clear(); prefabPromotions.clear(); googleFontLink?.remove();googleFontLink=null; layerLookup.dispose(); if(timer)clearInterval(timer);observer?.disconnect();closePopup();
     for (const watcher of treeObservers.values()) watcher.disconnect();
     treeObservers.clear();
     for(const release of listeners) release(); listeners.length=0;

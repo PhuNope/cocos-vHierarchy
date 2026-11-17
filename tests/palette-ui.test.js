@@ -41,6 +41,8 @@ function openPalette(appearance = {}, parents = {}, ancestorIds = []) {
   const wrap = new FakeElement('div', 'vh-pop');
   const sandbox = {
     state,
+    views: ancestorIds.map(uuid=>({uuid, prefabKey:null})),
+    ownAppearance: item => state.appearances[item.uuid] || {},
     VHierarchyColors: colors,
     PALETTE: ['#777d89','#b35e68','#b48e4f','#a9a857','#61a886','#5d94b5','#737cc2','#a36bb4','#b56e9d'],
     ICONS: [], materialSymbols: [], materialCatalogFull: false, materialPaletteRefresh: null, MATERIAL_PREFIX: 'material:', iconAssets: {},

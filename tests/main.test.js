@@ -37,6 +37,8 @@ test('can load, apply settings and persist without changing scene files',async()
   assert.ok(executed.some(js=>js.includes('window.__vHierarchy388?.setIcons(')));
   assert.ok(executed.some(js=>js.includes('data:image/svg+xml;base64,')));
   assert.ok(executed.some(js=>js.includes('VHierarchyColors.rowBackground(')));
+  assert.ok(executed.some(js=>js.includes('VHierarchyPrefabs.keyFor')));
+
   assert.equal(await main.methods.setOption('colorGradientsEnabled',false),true);
   assert.equal(await main.methods.setOption('colorSaturation',.6),true);
   assert.equal(await main.methods.setOption('colorBrightness',1.1),true);
@@ -160,5 +162,36 @@ test('full official Material catalog is downloaded, validated, broadcast, and ca
   main.load();
   await new Promise(resolve=>setTimeout(resolve,12));
   assert.equal(main.methods.getState().appearances[node].icon,'material:new_material_symbol_2026');
+  await main.unload();
+});
+
+test('Prefab template is persisted separately from instance UUID and can be promoted from older settings',async()=>{
+  const {isPrefabAppearanceKey}=require('../dist/core/model.js');
+  const key='prefab|42cf8a6d-690f-4eaf-89aa-170b78de3e35|root';
+  const node='a204319a-288c-484a-8f60-287573a05ab9';
+  assert.equal(isPrefabAppearanceKey(key),true);
+  main.load(); await new Promise(resolve=>setTimeout(resolve,22));
+  assert.equal(await main.methods.setAppearance(node,{icon:'folder',color:3,recursiveIcon:true},key),true);
+  assert.deepEqual(main.methods.getState().prefabAppearances[key],{color:3,icon:'folder',recursiveIcon:true});
+  const file=path.join(project,'settings','vHierarchy.json');
+  assert.equal(JSON.parse(fs.readFileSync(file,'utf8')).prefabAppearances[key].color,3);
+  const newNode='a204319a-288c-484a-8f60-287573a05ac0';
+  assert.equal(main.methods.getState().appearances[newNode],undefined,
+    'new Prefab instances must not require a matching instance UUID');
+  assert.equal(await main.methods.setAppearance(newNode,{color:7,icon:'camera'},key),true);
+  assert.equal(main.methods.getState().prefabAppearances[key].icon,'camera');
+  assert.equal(await main.methods.setAppearance(newNode,{color:5},'prefab|../../../bad|root'),false);
+  assert.equal(main.methods.getState().prefabAppearances[key].color,7);
+  assert.equal(await main.methods.setAppearance(newNode,{},key),true);
+  assert.equal(main.methods.getState().prefabAppearances[key],undefined);
+  const oldNode='a204319a-288c-484a-8f60-287573a05ac1';
+  assert.equal(await main.methods.setAppearance(oldNode,{color:6,icon:'light'}),true);
+  assert.equal(await main.methods.promotePrefabAppearance(oldNode,key),true);
+  assert.equal(main.methods.getState().prefabAppearances[key].icon,'light');
+  assert.equal(await main.methods.promotePrefabAppearance(oldNode,key),true);
+  assert.equal(main.methods.getState().prefabAppearances[key].color,6);
+  await main.unload();
+  main.load();await new Promise(resolve=>setTimeout(resolve,15));
+  assert.equal(main.methods.getState().prefabAppearances[key].color,6,'retained across Editor reload');
   await main.unload();
 });

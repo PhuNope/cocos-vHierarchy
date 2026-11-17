@@ -165,3 +165,14 @@ Curated searchable Material Symbols Outlined catalog with official Google Fonts 
 - [ ] Optional future: full local SVG/bitmap icon pack independent of Google font service, classic Material Icons and style selector.
 
 **Important:** Only the icon *index* is cached. Glyph font is still served by Google Fonts and not included in the distributed plugin. The Google source repository and documentation grant Apache-2.0 use.
+
+### M2 — Patch 19: Prefab-aware visual persistence (0.1.0)
+
+- [x] Keep row gradient, selected tint and injected icon when native Prefab state/row DOM changes
+- [x] Stable prefab-template appearance mapping based on asset UUID + relative Hierarchy level, separate from instance UUID
+- [x] Keep child color/icon inheritance and independent instance overrides
+- [x] Promote old UUID-only appearance after converting an existing node into a Prefab (with safe same-row/path fallback)
+- [x] Keep Cocos native Prefab name colors and built-in component glyphs intact
+- [x] Regression coverage for prefab root, child, nested asset, invalid identifiers, and persistence/reload
+- [ ] Verify Creator 3.8.8 GUI workflows: drag/drop prefab asset, prefab mode, duplicated instances, nested prefab, child reordering
+- [ ] Consider PrefabInfo.fileId-based mapping if a stable ID becomes available through a supported Scene API (current `level` mapping changes when sibling order changes)

@@ -158,9 +158,9 @@ test('popups work in both Document and ShadowRoot, not inserted directly in Docu
 });
 
 test('palette selection overrides native blue only for tinted rows and keeps rename neutral',()=>{
-  assert.match(renderer,/\.tree-node\[is-selected="true"\]\[data-vh-tint\] > \.drag-item \{/);
+  assert.match(renderer,/\.tree-node\[is-selected="true"\]\[data-vh-tint\] > \.drag-item,/);
   assert.match(renderer,/background-color:var\(--vh-selected-base\) !important/);
-  assert.match(renderer,/\.tree-node\[state="rename"\]\[data-vh-tint\] > \.drag-item \{/);
+  assert.match(renderer,/\.tree-node\[state="rename"\]\[data-vh-tint\] > \.drag-item,/);
   assert.match(renderer,/background-color:transparent !important/);
   assert.match(renderer,/\.tree-node\[is-selected='true'\]\[data-vh-tint\] > \.drag-item > \.vh-action-gutter/);
   assert.match(renderer,/VHierarchyColors\.selectedRowPaint\(hex, theme, state\.options, false\)/);

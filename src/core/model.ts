@@ -15,7 +15,7 @@ export interface Options extends Record<Feature, boolean> {
 }
 export interface Appearance { color?: number; icon?: string; iconColor?: string; recursiveColor?: boolean; recursiveIcon?: boolean; }
 export interface Bookmark { uuid: string; name: string; }
-export interface State { options: Options; appearances: Record<string, Appearance>; bookmarks: Bookmark[]; customIcons: CustomIcon[]; }
+export interface State { options: Options; appearances: Record<string, Appearance>; prefabAppearances: Record<string, Appearance>; bookmarks: Bookmark[]; customIcons: CustomIcon[]; }
 
 /** Based on the 1 grey + 8 rainbow slots in Unity VHierarchyPalette.cs. */
 export const PALETTE = ['#777d89', '#b35e68', '#b48e4f', '#a9a857', '#61a886', '#5d94b5', '#737cc2', '#a36bb4', '#b56e9d'];
@@ -38,6 +38,15 @@ const COCOS_COMPRESSED_NODE_ID = /^[A-Za-z0-9+/_-]{22}$/;
 export function isNodeId(value: unknown): value is string {
   return typeof value === 'string' &&
     (LEGACY_NODE_ID.test(value) || COCOS_COMPRESSED_NODE_ID.test(value));
+}
+/** Prefab appearance is project-only metadata keyed by prefab asset UUID and
+ * relative editor hierarchy level. It survives new instance node UUIDs while
+ * remaining separate from native Prefab and Scene serialization. */
+export function isPrefabAppearanceKey(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 256 || !value.startsWith('prefab|')) return false;
+  const pieces = value.split('|');
+  return pieces.length === 3 && isNodeId(pieces[1]) &&
+    (pieces[2] === 'root' || /^\d+(?:_\d+){0,48}$/.test(pieces[2]));
 }
 export const DEFAULT_OPTIONS: Options = {
   enabled: true, navigationBar: true, activationToggle: true,
@@ -87,10 +96,16 @@ export function sanitizeState(input: unknown): State {
   if (raw.appearances && typeof raw.appearances === 'object') for (const [id, value] of Object.entries(raw.appearances as Record<string, unknown>)) {
     if (isNodeId(id)) appearances[id] = sanitizeAppearance(value);
   }
+  const prefabAppearances: Record<string, Appearance> = Object.create(null);
+  if (raw.prefabAppearances && typeof raw.prefabAppearances === 'object' && !Array.isArray(raw.prefabAppearances)) {
+    for (const [key, value] of Object.entries(raw.prefabAppearances as Record<string, unknown>)) {
+      if (isPrefabAppearanceKey(key)) prefabAppearances[key] = sanitizeAppearance(value);
+    }
+  }
   const bookmarks = Array.isArray(raw.bookmarks) ? raw.bookmarks.filter((v): v is Bookmark =>
     !!v && typeof v === 'object' && isNodeId(v.uuid) && typeof v.name === 'string'
   ).slice(0, 32).map(({uuid, name}) => ({uuid, name: name.slice(0, 80)})) : [];
-  return { options, appearances, bookmarks, customIcons: sanitizeCustomIcons(raw.customIcons) };
+  return { options, appearances, prefabAppearances, bookmarks, customIcons: sanitizeCustomIcons(raw.customIcons) };
 }
 export function resolveAppearance(uuid: string, ancestors: string[], data: Record<string, Appearance>): Appearance {
   const current = data[uuid] ?? {};

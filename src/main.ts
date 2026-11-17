@@ -8,7 +8,7 @@ declare function setInterval(handler: () => void, timeout: number): unknown;
 declare function clearInterval(handle: unknown): void;
 declare function setTimeout(handler: () => void, timeout: number): unknown;
 declare function clearTimeout(handle: unknown): void;
-import { State, Options, Appearance, Feature, FEATURES, sanitizeState, sanitizeAppearance, isValidAppearance, isNodeId } from './core/model';
+import { State, Options, Appearance, Feature, FEATURES, sanitizeState, sanitizeAppearance, isValidAppearance, isNodeId, isPrefabAppearanceKey } from './core/model';
 import { MATERIAL_SYMBOL_NAMES, MATERIAL_CODEPOINTS_URL, MAX_CATALOG_BYTES, parseMaterialCache, parseMaterialCodepoints, setMaterialCatalog } from './core/material-catalog';
 import { CustomIcon, MAX_CUSTOM_ICONS, MAX_ICON_PNG_BYTES, isCustomIcon, isValidPng, cleanIconName } from './core/custom-icons';
 
@@ -59,7 +59,7 @@ class EditorHierarchyHost {
   private invalidateAllNodes = false;
 
   start(): void {
-    this.script = ['guides.js','scene-commands.js','layers.js','scenes.js','colors.js','icon-files.js','renderer.js']
+    this.script = ['guides.js','prefabs.js','scene-commands.js','layers.js','scenes.js','colors.js','icon-files.js','renderer.js']
       .map((name: string)=>fs.readFileSync(path.join(__dirname, 'renderer', name), 'utf8')).join('\n');
     const iconDir=path.join(__dirname, '..','static','icons');
     this.icons={};
@@ -150,8 +150,15 @@ class EditorHierarchyHost {
       const next = {...value}; delete next.icon; delete next.iconColor; delete next.recursiveIcon;
       if (Object.keys(next).length) appearances[uuid] = next;
     }
+    const prefabAppearances: State['prefabAppearances'] = {};
+    for (const [key, value] of Object.entries(this.state.prefabAppearances)) {
+      if (value.icon !== id) { prefabAppearances[key] = value; continue; }
+      const next = {...value}; delete next.icon; delete next.iconColor; delete next.recursiveIcon;
+      if (Object.keys(next).length) prefabAppearances[key] = next;
+    }
     const newState: State = {
-      ...this.state, appearances, customIcons: this.state.customIcons.filter(icon => icon.id !== id),
+      ...this.state, appearances, prefabAppearances,
+      customIcons: this.state.customIcons.filter(icon => icon.id !== id),
     };
     this.repo.save(newState);
     this.state = newState;
@@ -331,9 +338,12 @@ class EditorHierarchyHost {
     await this.broadcast('applyState', this.state);
     return true;
   }
-  async setAppearance(uuid: string, input: Appearance): Promise<boolean> {
+  async setAppearance(uuid: string, input: Appearance, prefabKey?: string): Promise<boolean> {
     if (!isNodeId(uuid)) { console.warn('[vHierarchy] set-appearance: unsupported node ID format', { length: String(uuid ?? '').length }); return false; }
     if (!isValidAppearance(input)) { console.warn('[vHierarchy] set-appearance: invalid appearance fields', Object.keys(input ?? {})); return false; }
+    if (prefabKey !== undefined && !isPrefabAppearanceKey(prefabKey)) {
+      console.warn('[vHierarchy] set-appearance: invalid prefab appearance key'); return false;
+    }
     const next = sanitizeAppearance(input);
     if (next.icon && isCustomIcon(next.icon) && !this.state.customIcons.some(i => i.id === next.icon)) return false;
     // Stage a new state first: a failed disk write must not leave the in-memory
@@ -341,10 +351,31 @@ class EditorHierarchyHost {
     const appearances = { ...this.state.appearances };
     if (Object.keys(next).length) appearances[uuid] = next;
     else delete appearances[uuid];
-    const newState = { ...this.state, appearances };
+    const prefabAppearances = { ...this.state.prefabAppearances };
+    if (prefabKey) {
+      if (Object.keys(next).length) prefabAppearances[prefabKey] = next;
+      else delete prefabAppearances[prefabKey];
+    }
+    const newState = { ...this.state, appearances, prefabAppearances };
     this.repo.save(newState);
     this.state = newState;
     await this.broadcast('applyState', this.state);
+    return true;
+  }
+  /** One-time migration of pre-Patch-19 node-UUID-only styles. When a
+   * decorated node is made into a prefab, its original node UUID may remain,
+   * but its visual metadata previously had no reusable prefab key. Never
+   * override an existing prefab template, preserving explicitly chosen styles. */
+  async promotePrefabAppearance(uuid: string, prefabKey: string): Promise<boolean> {
+    if (!isNodeId(uuid) || !isPrefabAppearanceKey(prefabKey)) return false;
+    const existing = this.state.appearances[uuid];
+    if (!existing || !Object.keys(existing).length) return false;
+    if (this.state.prefabAppearances[prefabKey]) return true;
+    const prefabAppearances = { ...this.state.prefabAppearances, [prefabKey]: {...existing} };
+    const newState: State = {...this.state, prefabAppearances};
+    this.repo.save(newState);
+    this.state = newState;
+    await this.broadcast('applyState', newState);
     return true;
   }
   async toggleBookmark(uuid: string, name: string): Promise<boolean> {
@@ -371,9 +402,10 @@ export const unload = (): Promise<void> => app.stop();
 export const methods = {
   getState: (): State => app.getState(),
   setOption: (key: keyof Options, value: unknown): Promise<boolean> => app.setOption(key, value),
-  setAppearance: (uuid: string, appearance: Appearance): Promise<boolean> => app.setAppearance(uuid, appearance),
+  setAppearance: (uuid: string, appearance: Appearance, prefabKey?: string): Promise<boolean> => app.setAppearance(uuid, appearance, prefabKey),
   importIcon: (name: unknown, dataUrl: unknown): Promise<CustomIcon | null> => app.importIcon(name, dataUrl),
   removeIcon: (id: string): Promise<boolean> => app.removeIcon(id),
+  promotePrefabAppearance: (uuid: string, prefabKey: string): Promise<boolean> => app.promotePrefabAppearance(uuid, prefabKey),
   toggleBookmark: (uuid: string, name: string): Promise<boolean> => app.toggleBookmark(uuid, name),
   openSettings: (): Promise<void> => app.openSettings(),
   toggleEnabled: (): Promise<boolean> => app.toggleEnabled(),

@@ -8,7 +8,7 @@ Unity source includes feature toggles in `VHierarchyMenu.cs`, row visuals in `VH
 
 **Asset limitation:** `vHierarchy.zip` contains `.cs`, `.meta`, `.asmdef` and `Read me.pdf`, *no original standalone PNG/SVG icon files*. `VHierarchyPalette.ResetIcons()` references Unity Editor built-in icons **by name**, rather than including them as image assets. `docs/reference/unity-features-menu.png` is an unmodified screenshot extracted from the supplied `Read me.pdf` for review only. For the editor UI we ship 12 original lightweight SVG substitutes in `static/icons/*.svg`, mapped to the Unity palette categories; these are not claimed to be copies of Unity internal icons. When actual custom icon assets are provided in the future, support direct import/mapping.
 
-## Current checkpoint: `0.1.0`, patch 3
+## Current checkpoint: `0.1.0`, patch 11
 
 - [x] Group four menu commands under **Panel → vHierarchy → ...** using the Creator 3.8 manifest submenu path, no four standalone top-level Panel entries.
 - [x] Guide hit-testing port: ancestor rails and direct elbows collapse their associated expanded parent using its **native expand arrow click**; protects control hit targets, modifier clicks, rename state and filtered/gapped trees. Project option `foldOnGuideClick` defaults true; tests cover vertical/lower/last/elbow and margin offsets.
@@ -43,7 +43,7 @@ Unity source includes feature toggles in `VHierarchyMenu.cs`, row visuals in `VH
 
 ### M2 — Unity row appearance parity (P0/P1)
 
-- Color palette 1 gray + 8 hues; true theme-aware tint gradients/brightness/saturation and recursive ancestry behavior.
+- [x] Patch 11: color palette 1 gray + 8 hues, theme-aware CSS gradients/brightness/saturation and softer inherited ancestry tints; verify real GUI and Unity visual proportions before accepting parity.
 - Replace default row icon in place (native icon slot rather than right-side badge) with context-aware prefab/lock/scene-state indicators; support bundled SVG + project-selected custom images, preserve native hit areas.
 - Active-state checkbox, lock hints, zebra striping / minimal mode + selectable density; intentionally no component minimap (removed per request).
 - Palette UI at row and keyboard; undoable changes where scene-backed. Avoid repeated full scans for large trees.
@@ -108,3 +108,11 @@ Unity source includes feature toggles in `VHierarchyMenu.cs`, row visuals in `VH
 - [x] Scene Selector supports close button, Escape, outside click, Refresh, asset validation and IPC error reporting.
 - [x] TypeScript build and Node regression tests.
 - [ ] Verify actual rendering, scene loading, lock clicks and search behavior in Cocos Creator 3.8.8 GUI.
+
+
+### 0.1.0 Patch 11: color gradients and palette controls
+
+- [x] Add isolated `src/renderer/colors.ts` with theme detection, HSL conversion, configurable saturation/brightness, flat grey, optional gradient and inherited tint. Inspired by `VHierarchyPalette.GetDefaultColor` and `VHierarchyGUI.backgroundColor`, not a direct pixel-perfect port.
+- [x] Persist `colorGradientsEnabled` and previously-unused `colorSaturation` / `colorBrightness` as validated project settings. Live nine-color preview in Settings, palette swatches honor current tint.
+- [x] Precompute 18 color gradients per scan and preserve selected-row highlight above tint. No injection into runtime GameObjects.
+- [ ] Validate appearance manually on Cocos Creator 3.8.8, including dark/light theme, roots/children, narrow Hierarchy, active checkbox, native component icon and Scene search; automated tests alone cannot verify native CSS integration.

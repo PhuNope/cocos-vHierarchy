@@ -21,6 +21,11 @@ test('can load, apply settings and persist without changing scene files',async()
   assert.ok(executed.some(js=>js.includes('window.__vHierarchy388?.applyState')));
   assert.ok(executed.some(js=>js.includes('window.__vHierarchy388?.setIcons(')));
   assert.ok(executed.some(js=>js.includes('data:image/svg+xml;base64,')));
+  assert.ok(executed.some(js=>js.includes('VHierarchyColors.rowBackground(')));
+  assert.equal(await main.methods.setOption('colorGradientsEnabled',false),true);
+  assert.equal(await main.methods.setOption('colorSaturation',.6),true);
+  assert.equal(await main.methods.setOption('colorBrightness',1.1),true);
+  assert.equal(await main.methods.setOption('colorSaturation','0.6'),false);
   assert.equal(await main.methods.setOption('zebraStriping',false),true);
   assert.equal(await main.methods.setOption('nonsense',true),false);
   assert.equal(await main.methods.setAppearance('b204319a-288c-484a-8f60-287573a05ab6',{color:4,icon:'📁'}),true);
@@ -30,6 +35,9 @@ test('can load, apply settings and persist without changing scene files',async()
   const saved=JSON.parse(fs.readFileSync(filename,'utf8'));
   assert.equal(saved.appearances['b204319a-288c-484a-8f60-287573a05ab6'].color,4);
   assert.equal(saved.bookmarks.length,1);
+  assert.equal(saved.options.colorGradientsEnabled,false);
+  assert.equal(saved.options.colorSaturation,.6);
+  assert.equal(saved.options.colorBrightness,1.1);
   await main.unload();
 });
 test('renderer refuses to run in preview webview',()=>{

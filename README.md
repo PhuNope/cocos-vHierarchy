@@ -77,7 +77,7 @@ See [the full phased feature-parity plan](https://github.com/PhuNope/cocos-vHier
 |---|---|
 | Hierarchy lines | Tree/minimal connectors (best effort if rows are virtualized); click a visible line to collapse its parent |
 | Zebra striping and minimal mode | Visual styles on existing native rows |
-| Per-object color palette | 9 slots based on `VHierarchyPalette.cs`; supports recursive inheritance |
+| Per-object color palette | 1 gray + 8 hues, theme-aware gradients (optional), saturation/brightness sliders, muted recursive inheritance |
 | Per-object icons | Emoji icon chooser, recursive inheritance; **not** Unity-specific raster icons |
 | Component minimap | Removed per request; only native component icons (if enabled in Cocos preferences) remain |
 | Activation checkbox | Direct checkbox via `scene:query-node`, explicit `scene:begin-recording` / `scene:set-property` / `scene:end-recording`, and `scene:query-dirty`; rejects unknown/locked/readonly nodes |
@@ -90,7 +90,7 @@ See [the full phased feature-parity plan](https://github.com/PhuNope/cocos-vHier
 
 ### Not yet equivalent to Unity
 
-This build does **not** claim parity for Unity's SceneView focus, lighting windows, component window/editor, drag/reorder bookmarks, palette custom textures or asset import, default parent shortcut, X delete shortcut, animated controller scroll, cross-scene bookmark restoration, color gradients/complex blending or prefab propagation semantics. Unity's zip contains C# sources and a PDF, **no standalone image/icon asset files**; the icon names in the source are Unity built-in Editor icons and cannot be extracted as image assets from that archive.
+This build does **not** claim parity for Unity's SceneView focus, lighting windows, component window/editor, drag/reorder bookmarks, palette custom textures or asset import, default parent shortcut, X delete shortcut, animated controller scroll, cross-scene bookmark restoration, per-row Unity texture gradients beyond the current CSS approximation, or prefab propagation semantics. Unity's zip contains C# sources and a PDF, **no standalone image/icon asset files**; the icon names in the source are Unity built-in Editor icons and cannot be extracted as image assets from that archive.
 
 ## Persistence and safety
 
@@ -103,6 +103,7 @@ The extension avoids arbitrary DOM mutation of the Scene's serialized values. Ac
 - `src/core` — editor-independent domain types, guards, palette mapping.
 - `src/main.ts` — extension process composition root; JSON repository; webContents lifecycle; message handlers.
 - `src/renderer/renderer.ts` — independent DOM adapter, presentation, user commands and IPC ports.
+- `src/renderer/colors.ts` — pure color math, dark/light theme detection, gradient generation and inherited tints (no Editor dependency).
 - `tests` — node:test regression and IPC lifecycle smoke tests.
 - `dist` — generated JavaScript; build package does not contain `src`, tests, dependencies, archives or Cocos sources.
 
@@ -138,3 +139,12 @@ cache discards in-flight stale responses. `scene:ready` / `scene:close` addition
 refresh the visible labels. Native component icons and the node name/search remain
 untouched. The 12-second TTL is retained solely as a fallback if the native event is
 not emitted by a future Editor build.
+
+
+## Patch 11 (0.1.0): Unity-inspired palette tint controls
+
+- Added **Use Unity-style color gradients** under **Panel → vHierarchy → Settings / Palette** (enabled by default). The grey slot stays flat, matching Unity's source. With gradients disabled, all slots render uniform translucent tints.
+- Added **Saturation** and **Brightness** sliders (`0.00×`–`2.00×`), with a live nine-color preview. Changes persist in `settings/vHierarchy.json` and immediately repaint visible rows. The option names match `VHierarchyPalette.cs` concepts.
+- Color calculation adapts to Editor light/dark theme, and recursively inherited parent colors are intentionally softer than direct assignments. Native selection highlight is composited *above* the color tint; native Layer labels, right-side component indicators, Lock, checkbox and text ellipsis are unchanged.
+- Per-scan color output is computed only for 9×2 palette states, not once per node. The palette color UI matches the same saturation/brightness calculations. Existing settings are migrated with safe defaults; no Scene data is changed by cosmetic color settings.
+- Actual styling remains an approximation of Unity's row gradients, not pixel-perfect Unity parity. Please test changing theme, disabling gradients, selecting colored nodes, and color inheritance (root → child → overridden grandchild) inside Cocos Creator 3.8.8 before declaring M2 complete.

@@ -4,7 +4,7 @@
  * Uses a reversible private DOM overlay because Cocos exposes no public per-row decorator.
  */
 (() => {
-  type Flag = 'navigationBar' | 'activationToggle' | 'hierarchyLines' | 'zebraStriping' | 'minimalMode' | 'sceneSelector' | 'keyboardShortcuts' | 'foldOnGuideClick' | 'showNodeLayers';
+  type Flag = 'navigationBar' | 'activationToggle' | 'hierarchyLines' | 'zebraStriping' | 'minimalMode' | 'sceneSelector' | 'keyboardShortcuts' | 'foldOnGuideClick' | 'showNodeLayers' | 'colorGradientsEnabled';
   interface Opts extends Record<Flag, boolean> { enabled: boolean; guideMode: 'tree' | 'minimal'; colorSaturation: number; colorBrightness: number; }
   interface Appearance { color?: number; icon?: string; recursiveColor?: boolean; recursiveIcon?: boolean; }
   interface Bookmark { uuid: string; name: string; }
@@ -29,11 +29,12 @@
     ['foldOnGuideClick', 'Click hierarchy lines to collapse parent'],
     ['sceneSelector', 'Scene selector (experimental)'], ['keyboardShortcuts', 'Keyboard shortcuts'],
     ['showNodeLayers', 'Show node layer next to its name'],
+    ['colorGradientsEnabled', 'Use Unity-style color gradients'],
   ];
   const DEFAULT: State = {
     options: { enabled:true, navigationBar:true, activationToggle:true, hierarchyLines:true,
       zebraStriping:true, minimalMode:false, sceneSelector:false, keyboardShortcuts:true, foldOnGuideClick:true,
-      showNodeLayers:true, guideMode:'tree', colorBrightness:1, colorSaturation:1 }, appearances:{}, bookmarks:[],
+      showNodeLayers:true, colorGradientsEnabled:true, guideMode:'tree', colorBrightness:1, colorSaturation:1 }, appearances:{}, bookmarks:[],
   };
   const CSS = `
     .vh-toolbar { display:flex; align-items:center; gap:4px; height:27px; padding:0 6px; box-sizing:border-box; border-bottom:1px solid var(--color-default-border, #3d454c); background:var(--color-normal-fill, #292e35); color:var(--color-normal-contrast,#ced7df); overflow:hidden; font-size:11px; }
@@ -44,8 +45,9 @@
     .vh-bookmarks { display:flex; gap:2px; flex:0 1 auto; min-width:0; overflow:hidden; }
     .vh-bookmark { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; max-width:65px; color:#ffd18c; }
     .tree-node[data-vh-stripe="1"] > .drag-item { background-color:rgba(125,140,160,.055); }
-    .tree-node[data-vh-tint] > .drag-item { background-color:var(--vh-row-color) !important; }
-    .tree-node[is-selected="true"] > .drag-item { background-image:linear-gradient(rgba(91,155,239,.25),rgba(91,155,239,.25)); }
+    .tree-node[data-vh-tint] > .drag-item { background-image:var(--vh-row-gradient) !important; }
+    .tree-node[is-selected="true"][data-vh-tint] > .drag-item { background-image:linear-gradient(rgba(91,155,239,.25),rgba(91,155,239,.25)),var(--vh-row-gradient) !important; }
+    .tree-node[is-selected="true"]:not([data-vh-tint]) > .drag-item { background-image:linear-gradient(rgba(91,155,239,.25),rgba(91,155,239,.25)); }
     .tree-node[data-vh-dim="true"] > .drag-item { opacity:.24; }
     .tree-node[data-vh-compact="true"] { line-height:18px; }
     .tree-node[data-vh-compact="true"] > .drag-item { height:18px; }
@@ -184,9 +186,16 @@
     .vh-grid { display:grid; grid-template-columns:repeat(9, 1fr); gap:4px; margin:7px 0; }
     .vh-colors { display:grid; grid-template-columns:repeat(9, 1fr); gap:5px; margin:7px 0; }
     .vh-swatch { width:19px; height:19px; border:1px solid #e1e7e966; border-radius:4px; padding:0; cursor:pointer; }
+    .vh-swatch[aria-pressed='true'] { outline:2px solid #c5d9f0; outline-offset:1px; }
     .vh-symbol { width:24px; height:24px; background:#48515c; border:1px solid #ffffff21; border-radius:4px; cursor:pointer; padding:3px; display:flex; align-items:center; justify-content:center; }
     .vh-symbol img { width:16px; height:16px; object-fit:contain; pointer-events:none; }
     .vh-footer { font-size:10px; color:#a8b4c1; margin-top:8px; }
+    .vh-color-controls { padding:7px 0 2px; }
+    .vh-color-range { display:grid !important; grid-template-columns:78px minmax(80px, 1fr) 33px; gap:8px; align-items:center; }
+    .vh-color-range > input { width:100%; min-width:0; accent-color:#6b9fd6; }
+    .vh-color-value { text-align:right; font-variant-numeric:tabular-nums; color:#acbac8; }
+    .vh-color-preview { display:flex; gap:3px; margin:8px 0; }
+    .vh-color-preview > span { flex:1; height:14px; border-radius:2px; border:1px solid #ffffff1c; }
     .vh-pop button { color:inherit; }
   `;
 
@@ -297,7 +306,8 @@
     return { row, drag, node, uuid, name, nameEl: nameEl || null, padding:px(computed.paddingLeft), margin:px(computed.marginLeft), anchor,
       searching:!!row.closest('.tree[searching]'), depth:node?.depth ?? 0 };
   }
-  function nearestAppearance(item: Item, ancestorIds: string[]): Appearance {
+  type ResolvedAppearance = Appearance & { colorInherited: boolean };
+  function nearestAppearance(item: Item, ancestorIds: string[]): ResolvedAppearance {
     const a = state.appearances[item.uuid] || {};
     let color: number | undefined;
     let icon: string | undefined;
@@ -306,7 +316,7 @@
       if (parent?.recursiveColor && parent.color !== undefined) color = parent.color;
       if (parent?.recursiveIcon && parent.icon) icon = parent.icon;
     }
-    return { ...a, color: a.color ?? color, icon: a.icon ?? icon };
+    return { ...a, color: a.color ?? color, icon: a.icon ?? icon, colorInherited: a.color === undefined && color !== undefined };
   }
   function changeAttr(node: HTMLElement, key: string, value?: string): void {
     if (value === undefined) { if (node.hasAttribute(key)) node.removeAttribute(key); }
@@ -404,22 +414,25 @@
     } else if (badge !== item.drag.lastElementChild) item.drag.appendChild(badge);
   }
 
-  function drawItem(item: Item, index: number, ancestors: Item[]): void {
+  type RowTints = Array<readonly [string, string]>;
+  function drawItem(item: Item, index: number, ancestors: Item[], tints: RowTints): void {
     const opts = state.options;
     const enabled = opts.enabled;
     changeAttr(item.row, 'data-vh-stripe', enabled && opts.zebraStriping ? String(index % 2) : undefined);
     changeAttr(item.row, 'data-vh-compact', enabled && opts.minimalMode ? 'true' : undefined);
     changeAttr(item.row, 'data-vh-dim', enabled && searchText && !item.name.toLowerCase().includes(searchText) ? 'true' : undefined);
-    const inherited = item.uuid ? nearestAppearance(item, ancestors.map(a => a.uuid)) : {};
+    const inherited: ResolvedAppearance = item.uuid ? nearestAppearance(item, ancestors.map(a => a.uuid)) : { colorInherited: false };
     if (enabled && inherited.color !== undefined) {
-      const hex = PALETTE[inherited.color] || PALETTE[0];
-      // Unity's source uses low-alpha HSL palette; tint stays intentionally translucent.
-      const alpha = Math.min(.36, .10 * opts.colorBrightness);
-      const rgb = [1,3,5].map(i => parseInt(hex.slice(i,i+2),16)).join(',');
+      // Precomputed once per scan; avoid per-node HSL conversion in large Scenes.
+      const gradient = tints[inherited.color]?.[inherited.colorInherited ? 1 : 0] ?? tints[0][0];
       changeAttr(item.row, 'data-vh-tint', '');
-      item.row.style.setProperty('--vh-row-color', `rgba(${rgb},${alpha})`);
+      changeAttr(item.row, 'data-vh-inherited-color', inherited.colorInherited ? 'true' : undefined);
+      if (item.row.style.getPropertyValue('--vh-row-gradient') !== gradient)
+        item.row.style.setProperty('--vh-row-gradient', gradient);
     } else {
-      changeAttr(item.row, 'data-vh-tint'); item.row.style.removeProperty('--vh-row-color');
+      changeAttr(item.row, 'data-vh-tint');
+      changeAttr(item.row, 'data-vh-inherited-color');
+      item.row.style.removeProperty('--vh-row-gradient');
     }
     const iconEl = item.drag.querySelector(':scope > .vh-icon') as HTMLElement | null;
     const displayIcon = enabled && inherited.icon ? inherited.icon : '';
@@ -557,10 +570,21 @@
       watcher.disconnect(); treeObservers.delete(tree);
     }
   }
+  function editorTheme(): VHierarchyColors.Theme {
+    const themeHint = [document.documentElement.getAttribute('theme'), document.documentElement.getAttribute('data-theme'), document.documentElement.className, document.body?.getAttribute('theme')].filter(Boolean).join(' ');
+    const body = getComputedStyle(document.body);
+    const html = getComputedStyle(document.documentElement);
+    return VHierarchyColors.detectTheme([body.getPropertyValue('--color-normal-fill'), html.getPropertyValue('--color-normal-fill'), body.backgroundColor, html.backgroundColor], themeHint);
+  }
   function scan(): void {
     queued = false;
     if (stopped) return;
     scans++; panelCount = 0; vueRows = 0; views = [];
+    const theme = editorTheme();
+    const tints: RowTints = PALETTE.map((hex, slot)=>[
+      VHierarchyColors.rowBackground(hex,theme,state.options,false,slot===0),
+      VHierarchyColors.rowBackground(hex,theme,state.options,true,slot===0),
+    ]);
     const scannedTrees = new Set<Element>();
     try {
       for (const panel of panels()) for (const candidate of roots(panel)) {
@@ -587,9 +611,9 @@
           const stack: Item[]=[];
           for (let i = 0; i < group.length; i++) {
             const item=group[i]; item.depth=geometry.nodes[i].depth;
-            if (!geometry.nodes[i].valid) { stack.length=0; drawItem(item,i,[]); views.push(item); continue; }
+            if (!geometry.nodes[i].valid) { stack.length=0; drawItem(item,i,[],tints); views.push(item); continue; }
             stack.length=Math.min(stack.length,item.depth);
-            drawItem(item,i,stack.slice());
+            drawItem(item,i,stack.slice(),tints);
             views.push(item); stack[item.depth]=item;
           }
           updateGuides(group);
@@ -732,7 +756,8 @@
     const wrap=popup('Palette · '+item.name,x,y);
     wrap.append(el('span','','Color'));
     const colors=el('div','vh-colors');
-    PALETTE.forEach((c,i)=>{ const sw=btn('','Color '+(i+1),()=>{current.color=i;void persistAppearance(item,{...current});},'vh-swatch');sw.style.background=c; colors.append(sw); });
+    const theme=editorTheme();
+    PALETTE.forEach((c,i)=>{ const sw=btn('','Color '+(i+1),()=>{current.color=i;void persistAppearance(item,{...current});},'vh-swatch');sw.style.background=VHierarchyColors.swatch(c,theme,state.options); sw.setAttribute('aria-pressed',String(current.color===i)); colors.append(sw); });
     wrap.append(colors,btn('Clear color','Remove color',()=>{delete current.color;current.recursiveColor=false;void persistAppearance(item,{...current});}));
     const recursive=el('label');const check=el('input') as HTMLInputElement;check.type='checkbox';check.checked=!!current.recursiveColor;
     check.addEventListener('change',()=>{current.recursiveColor=check.checked;void persistAppearance(item,{...current});});
@@ -750,18 +775,41 @@
   }
   function showSettings(): void {
     const wrap=popup('vHierarchy · v0.1.0');
+    const draft={...state.options};
+    let updatePreview:()=>void=()=>{};
     const master=el('label');const masterCheck=el('input') as HTMLInputElement;
     masterCheck.type='checkbox';masterCheck.checked=state.options.enabled;
     masterCheck.addEventListener('change',()=>{void req('cocos-vhierarchy','set-option','enabled',masterCheck.checked).catch(e=>logError('options',e));});
     master.append(masterCheck, document.createTextNode('Enable vHierarchy'));wrap.append(master);
     for(const [name,label] of OPTIONS) {
       const line=el('label'); const input=el('input') as HTMLInputElement;input.type='checkbox';input.checked=state.options[name];
-      input.addEventListener('change',()=>{void req('cocos-vhierarchy','set-option',name,input.checked).catch(e=>logError('options',e));});
+      input.addEventListener('change',()=>{
+        if(name==='colorGradientsEnabled'){draft.colorGradientsEnabled=input.checked;updatePreview();}
+        void req('cocos-vhierarchy','set-option',name,input.checked).catch(e=>logError('options',e));
+      });
       line.append(input,document.createTextNode(label));wrap.append(line);
     }
     const modes=el('div');modes.append(el('span','','Guide style: '));
     for(const mode of ['tree','minimal'] as const) modes.append(btn(mode,mode,()=>{void req('cocos-vhierarchy','set-option','guideMode',mode).catch(e=>logError('guide mode',e));}));
-    wrap.append(modes,el('p','vh-footer','Color/icon: Alt + right-click a Hierarchy node. Settings are saved per project.'));
+    wrap.append(modes);
+    const colorControls=el('section','vh-color-controls');
+    colorControls.append(el('strong','','Palette appearance'));
+    const preview=el('div','vh-color-preview');
+    const previews=PALETTE.map(hex=>{const cell=el('span');preview.append(cell);return {hex,cell};});
+    const theme=editorTheme();
+    updatePreview=():void=>{for(const {hex,cell} of previews) cell.style.background=VHierarchyColors.rowBackground(hex,theme,draft,false,hex===PALETTE[0]);};
+    const addRange=(key:'colorSaturation'|'colorBrightness',label:string):void=>{
+      const row=el('label','vh-color-range');
+      const text=el('span','',label);
+      const slider=el('input') as HTMLInputElement;slider.type='range';slider.min='0';slider.max='2';slider.step='0.05';slider.value=String(draft[key]);
+      const value=el('span','vh-color-value',`${draft[key].toFixed(2)}×`);
+      slider.addEventListener('input',()=>{ draft[key]=Number(slider.value);value.textContent=`${draft[key].toFixed(2)}×`;updatePreview(); });
+      slider.addEventListener('change',()=>{void req('cocos-vhierarchy','set-option',key,Number(slider.value)).catch(e=>logError('palette slider',e));});
+      row.append(text,slider,value);colorControls.append(row);
+    };
+    addRange('colorSaturation','Saturation');addRange('colorBrightness','Brightness');
+    colorControls.append(preview);updatePreview();
+    wrap.append(colorControls,el('p','vh-footer','Color/icon: Alt + right-click a Hierarchy node. Settings are saved per project.'));
     wrap.append(btn('Close','Close settings',()=>closePopup()));
   }
   async function showScenes(): Promise<void> {
@@ -829,9 +877,10 @@
       }
       for(const row of (r as Element).querySelectorAll?.('.tree-node')||[]){
         const h=row as HTMLElement;
-        for(const key of ['data-vh-tint','data-vh-stripe','data-vh-dim','data-vh-compact','data-vh-active-control','data-vh-has-layer','data-vh-native-component'])h.removeAttribute(key);
+        for(const key of ['data-vh-tint','data-vh-stripe','data-vh-dim','data-vh-compact','data-vh-active-control','data-vh-has-layer','data-vh-native-component','data-vh-inherited-color'])h.removeAttribute(key);
         clearGuides(h);
-        h.style.removeProperty('--vh-row-color');
+        h.style.removeProperty('--vh-row-gradient');
+        h.style.removeProperty('--vh-row-color'); // clean up old patch artifacts
         h.style.removeProperty('--vh-node-name-width');
         for(const child of h.querySelectorAll(':scope > .drag-item > .vh-icon,:scope > .drag-item > .vh-components,:scope > .drag-item > .vh-active,:scope > .drag-item > .vh-active-hit,:scope > .drag-item > .vh-node-layer,:scope > .drag-item > .vh-action-gutter'))child.remove();
       }

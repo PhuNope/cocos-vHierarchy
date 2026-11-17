@@ -40,3 +40,9 @@ test('component minimap is intentionally absent, including migrated settings',()
   const state=sanitizeState({options:{componentMinimap:true}});
   assert.equal(Object.hasOwn(state.options,'componentMinimap'),false);
 });
+
+test('gradient option defaults true and migrates old project settings safely',()=>{
+  assert.equal(sanitizeState({}).options.colorGradientsEnabled,true);
+  assert.equal(sanitizeState({options:{colorGradientsEnabled:false}}).options.colorGradientsEnabled,false);
+  assert.equal(sanitizeState({options:{colorGradientsEnabled:'false'}}).options.colorGradientsEnabled,true);
+});

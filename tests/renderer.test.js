@@ -109,3 +109,19 @@ test('long node names ellipsize before Layer rather than suppressing metadata',(
   assert.doesNotMatch(renderer, /const available = item\.drag\.clientWidth/);
   assert.match(renderer, /item\.row\.getAttribute\('state'\) === 'rename'/);
 });
+
+test('Unity gradient styling preserves selection highlight and native right-side icon',()=>{
+  assert.match(renderer,/background-image:var\(--vh-row-gradient\) !important/);
+  assert.match(renderer,/background-image:linear-gradient\(rgba\(91,155,239,\.25\),rgba\(91,155,239,\.25\)\),var\(--vh-row-gradient\)/);
+  assert.match(renderer,/VHierarchyColors\.rowBackground\(hex, theme, state\.options, false, slot === 0\)/);
+  assert.match(renderer,/data-vh-inherited-color/);
+  assert.match(renderer,/removeProperty\('--vh-row-gradient'\)/);
+});
+test('palette settings expose live preview and persist gradient/saturation/brightness independently',()=>{
+  assert.match(renderer,/\['colorGradientsEnabled', 'Use Unity-style color gradients'\]/);
+  assert.match(renderer,/addRange\('colorSaturation',\s*'Saturation'\)/);
+  assert.match(renderer,/addRange\('colorBrightness',\s*'Brightness'\)/);
+  assert.match(renderer,/slider\.addEventListener\('input'/);
+  assert.match(renderer,/slider\.addEventListener\('change'/);
+  assert.match(renderer,/updatePreview\(\)/);
+});

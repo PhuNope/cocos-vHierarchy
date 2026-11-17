@@ -97,4 +97,48 @@ namespace VHierarchyGuides {
     }
     return { layout, nodes };
   }
+
+  export type GuideMode = 'tree' | 'minimal';
+  /**
+   * Hit-test only pixels occupied by visible guides, not the rest of the gutter.
+   * Coordinates are relative to the native ui-drag-item bounding rectangle.
+   * Returns the depth of the line, whose parent is at depth - 1.
+   */
+  export function hitTest(node: Node, layout: Layout, x: number, y: number,
+    height: number, mode: GuideMode, tolerance = 4): number | null {
+    if (!node.valid || node.depth < 1 || !Number.isFinite(x) || !Number.isFinite(y) ||
+      !Number.isFinite(height) || height <= 0 || y < 0 || y > height) return null;
+    if (mode === 'tree' && node.elbowX > 1 && node.elbowWidth >= 5 &&
+      Math.abs(y - height / 2) <= tolerance &&
+      x >= node.offset + node.elbowX - tolerance &&
+      x <= node.offset + node.elbowX + node.elbowWidth + tolerance) return node.depth;
+    const rails = mode === 'minimal'
+      ? [...node.rails.filter(rail => rail.shape !== 'lower'),
+        { level: node.depth, shape: node.hasNextSibling ? 'full' as const : 'last' as const }]
+      : node.rails;
+    // The nearest rail under the cursor wins; rendering uses the same x/shape rules.
+    for (const rail of rails) {
+      const lineX = layout.base + (rail.level - 0.5) * layout.step;
+      if (lineX <= 1 || lineX >= node.indent - 1 ||
+        Math.abs(x - (node.offset + lineX)) > tolerance) continue;
+      if (rail.shape === 'lower' && y < height / 2 - tolerance) continue;
+      if (rail.shape === 'last' && y > height * .78 + tolerance) continue;
+      return rail.level;
+    }
+    return null;
+  }
+  /** Returns a visible ancestor, never a guessed parent in a filtered/virtualized tree. */
+  export function foldParentIndex(nodes: Node[], childIndex: number, lineLevel: number): number | null {
+    if (!Number.isInteger(lineLevel) || lineLevel < 1 ||
+      !Number.isInteger(childIndex) || childIndex < 0 || childIndex >= nodes.length) return null;
+    let current: number | null = childIndex;
+    while (current !== null) {
+      const node: Node = nodes[current];
+      if (!node?.valid) return null;
+      if (node.depth === lineLevel - 1) return current;
+      if (node.depth < lineLevel - 1) return null;
+      current = node.parent;
+    }
+    return null;
+  }
 }

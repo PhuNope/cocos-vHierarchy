@@ -37,3 +37,43 @@ test('searching rows suspend guides rather than linking unrelated parents',()=>{
   assert.equal(nodes[1].valid,false);assert.equal(nodes[2].valid,false);
   assert.equal(nodes[3].valid,true);
 });
+
+test('clicking a child elbow resolves to its direct expanded parent',()=>{
+  const {layout,nodes}=guides.calculate([row(0),row(1,60),row(2,80),row(2,80),row(1,60)]);
+  const child=nodes[2],height=20;
+  const x=child.offset+child.elbowX+child.elbowWidth/2;
+  assert.equal(guides.hitTest(child,layout,x,10,height,'tree'),2);
+  assert.equal(guides.foldParentIndex(nodes,2,2),1);
+  assert.equal(guides.hitTest(child,layout,x,18,height,'tree'),null);
+});
+test('clicking an ancestor rail resolves to the correct ancestor parent, not current node',()=>{
+  const {layout,nodes}=guides.calculate([row(0),row(1,60),row(2,80),row(2,80),row(1,60)]);
+  const item=nodes[2];
+  const railX=item.offset+layout.base+(1-.5)*layout.step;
+  assert.equal(guides.hitTest(item,layout,railX,8,20,'tree'),1);
+  assert.equal(guides.foldParentIndex(nodes,2,1),0);
+  assert.equal(guides.hitTest(item,layout,railX+10,8,20,'tree'),null);
+});
+test('lower rails only capture their lower half; minimal mode supports last branch',()=>{
+  const {layout,nodes}=guides.calculate([row(0),row(1,60),row(2,80),row(2,80),row(1,60)]);
+  const item=nodes[2];
+  const railX=item.offset+layout.base+(2-.5)*layout.step;
+  assert.equal(guides.hitTest(item,layout,railX,1,20,'tree'),null);
+  assert.equal(guides.hitTest(item,layout,railX,16,20,'tree'),2);
+  assert.equal(guides.hitTest(nodes[3],layout,railX,5,20,'minimal'),2);
+  assert.equal(guides.foldParentIndex(nodes,3,2),1);
+});
+test('invalid/filtered rows cannot fold guessed parents, and margin offset is accounted for',()=>{
+  const {layout,nodes}=guides.calculate([
+    {padding:0,margin:9,anchor:50,reportedDepth:0},
+    {padding:0,margin:29,anchor:60,reportedDepth:1},
+    {padding:0,margin:69,anchor:80,reportedDepth:3},
+  ]);
+  assert.equal(layout.mode,'margin');
+  assert.equal(guides.hitTest(nodes[2],layout,0,10,20,'tree'),null);
+  assert.equal(guides.foldParentIndex(nodes,2,2),null);
+  const item=nodes[1];
+  const x=item.offset+item.elbowX+item.elbowWidth/2;
+  assert.equal(guides.hitTest(item,layout,x,10,20,'tree'),1);
+  assert.equal(guides.foldParentIndex(nodes,1,1),0);
+});

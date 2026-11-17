@@ -40,3 +40,14 @@ test('renderer refuses to run in preview webview',()=>{
   vm.runInNewContext(source,context,{timeout:1000});
   assert.equal(context.window.__vHierarchy388,undefined);
 });
+
+test('all panel actions live inside one vHierarchy submenu',()=>{
+  const manifest=require('../package.json');
+  const menus=manifest.contributions.menu;
+  assert.equal(menus.length,4);
+  for(const item of menus){
+    assert.equal(item.path,'i18n:menu.panel/vHierarchy');
+    assert.equal(item.label.startsWith('vHierarchy:'),false);
+    assert.ok(manifest.contributions.messages[item.message]);
+  }
+});

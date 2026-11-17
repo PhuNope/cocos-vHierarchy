@@ -4,13 +4,13 @@
  * Uses a reversible private DOM overlay because Cocos exposes no public per-row decorator.
  */
 (() => {
-  type Flag = 'navigationBar' | 'componentMinimap' | 'activationToggle' | 'hierarchyLines' | 'zebraStriping' | 'minimalMode' | 'sceneSelector' | 'keyboardShortcuts';
+  type Flag = 'navigationBar' | 'componentMinimap' | 'activationToggle' | 'hierarchyLines' | 'zebraStriping' | 'minimalMode' | 'sceneSelector' | 'keyboardShortcuts' | 'foldOnGuideClick';
   interface Opts extends Record<Flag, boolean> { enabled: boolean; guideMode: 'tree' | 'minimal'; colorSaturation: number; colorBrightness: number; }
   interface Appearance { color?: number; icon?: string; recursiveColor?: boolean; recursiveIcon?: boolean; }
   interface Bookmark { uuid: string; name: string; }
   interface State { options: Opts; appearances: Record<string, Appearance>; bookmarks: Bookmark[]; }
   interface TreeDump { uuid?: string; name?: string; depth?: number; parent?: string; active?: boolean; locked?: boolean; readonly?: boolean; isScene?: boolean; components?: Array<{ type?: string; extends?: string[] }>; prefab?: { state?: number }; }
-  interface Item { row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; depth: number; padding: number; margin: number; anchor: number; searching: boolean; components: string[]; }
+  interface Item { guide?: { group: Item[]; index: number; result: VHierarchyGuides.Result }; row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; depth: number; padding: number; margin: number; anchor: number; searching: boolean; components: string[]; }
   interface Hook { refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; showSettings(): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
@@ -26,11 +26,12 @@
     ['navigationBar', 'Navigation bar / Bookmarks'], ['componentMinimap', 'Component minimap'],
     ['activationToggle', 'Active quick toggle'], ['hierarchyLines', 'Hierarchy lines'],
     ['zebraStriping', 'Zebra striping'], ['minimalMode', 'Minimal mode'],
+    ['foldOnGuideClick', 'Click hierarchy lines to collapse parent'],
     ['sceneSelector', 'Scene selector (experimental)'], ['keyboardShortcuts', 'Keyboard shortcuts'],
   ];
   const DEFAULT: State = {
     options: { enabled:true, navigationBar:true, componentMinimap:true, activationToggle:true, hierarchyLines:true,
-      zebraStriping:true, minimalMode:false, sceneSelector:false, keyboardShortcuts:true,
+      zebraStriping:true, minimalMode:false, sceneSelector:false, keyboardShortcuts:true, foldOnGuideClick:true,
       guideMode:'tree', colorBrightness:1, colorSaturation:1 }, appearances:{}, bookmarks:[],
   };
   const CSS = `
@@ -235,7 +236,7 @@
   /** Geometry is measured from native drag item styles, not an estimated padding step. */
   function updateGuides(items: Item[]): void {
     if (!state.options.enabled || !state.options.hierarchyLines || items.some(x => x.searching)) {
-      items.forEach(x => clearGuides(x.row)); return;
+      items.forEach(x => { x.guide=undefined; clearGuides(x.row); }); return;
     }
     const result = VHierarchyGuides.calculate(items.map(item => ({
       padding:item.padding, margin:item.margin, anchor:item.anchor, searching:item.searching,
@@ -243,6 +244,7 @@
     })));
     for (let i = 0; i < items.length; i++) {
       const {row} = items[i]; const entry = result.nodes[i];
+      items[i].guide = entry.valid ? { group:items, index:i, result } : undefined;
       if (!entry.valid || entry.depth < 1 || entry.depth > 32) { clearGuides(row); continue; }
       const {base, step, mode} = result.layout;
       const rails = state.options.guideMode === 'minimal'
@@ -410,6 +412,41 @@
       const item = views.find(i => i.row === row);
       if (item) lastHovered=item;
     };
+    /** Respect native row controls; only clicks on actually-painted guide pixels collapse. */
+    const guideParentAt = (e: MouseEvent): Item | null => {
+      if (e.button !== 0 || e.altKey || e.shiftKey || e.ctrlKey || e.metaKey ||
+        !state.options.enabled || !state.options.hierarchyLines || !state.options.foldOnGuideClick) return null;
+      const target = e.target as Element | null;
+      if (!(target instanceof Element) || target.closest(
+        '.arrow, ui-icon, ui-asset-image, ui-rename-input, input, textarea, button, [contenteditable], .vh-toolbar, .vh-components')) return null;
+      const row = target.closest('.tree-node') as HTMLElement | null;
+      const item = views.find(view => view.row === row);
+      if (!item?.guide || item.searching || row?.getAttribute('state') === 'rename') return null;
+      const {group,index,result} = item.guide;
+      const rect = item.drag.getBoundingClientRect();
+      const level = VHierarchyGuides.hitTest(result.nodes[index], result.layout,
+        e.clientX - rect.left, e.clientY - rect.top, rect.height, state.options.guideMode);
+      if (level === null) return null;
+      const parentIndex = VHierarchyGuides.foldParentIndex(result.nodes,index,level);
+      if (parentIndex === null) return null;
+      const parent = group[parentIndex];
+      if (!parent || parent.row.getAttribute('is-expand') !== 'true' || !parent.row.hasAttribute('is-parent') ||
+        !parent.drag.querySelector(':scope > .arrow')) return null;
+      return parent;
+    };
+    const guideDown = (e: Event): void => {
+      if (!(e instanceof MouseEvent) || !guideParentAt(e)) return;
+      // Block native drag/select handling on the small (4px) line hit area.
+      e.preventDefault(); e.stopImmediatePropagation();
+    };
+    const guideClick = (e: Event): void => {
+      if (!(e instanceof MouseEvent)) return;
+      const parent = guideParentAt(e);
+      if (!parent) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      parent.drag.querySelector<HTMLElement>(':scope > .arrow')?.click();
+      schedule();
+    };
     const menu = (e: Event): void => {
       if (!(e instanceof MouseEvent) || !e.altKey || !state.options.enabled) return;
       const row = (e.target as Element)?.closest?.('.tree-node') as HTMLElement | null;
@@ -436,10 +473,12 @@
         if(lastHovered.uuid){ k.preventDefault(); k.stopPropagation();editor()?.Selection?.select?.('node',lastHovered.uuid); }
       }
     };
+    root.addEventListener('mousedown', guideDown, true);
+    root.addEventListener('click', guideClick, true);
     root.addEventListener('mouseover', over, true);
     root.addEventListener('contextmenu', menu, true);
     root.addEventListener('keydown', keydown, true);
-    listeners.push(() => { root.removeEventListener('mouseover', over, true); root.removeEventListener('contextmenu', menu, true); root.removeEventListener('keydown', keydown, true); });
+    listeners.push(() => { root.removeEventListener('mousedown', guideDown, true); root.removeEventListener('click', guideClick, true); root.removeEventListener('mouseover', over, true); root.removeEventListener('contextmenu', menu, true); root.removeEventListener('keydown', keydown, true); });
   }
   function collapseAll(except?: Item): void {
     const keep = new Set<string>();

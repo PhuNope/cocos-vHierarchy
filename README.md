@@ -7,6 +7,13 @@
 This is a TypeScript Cocos Editor extension inspired by the provided Unity vHierarchy source. It **never patches `app.asar`**. The renderer layer uses a reversible, private Hierarchy DOM/Vue overlay; it may need adjustments for other 3.8.x builds or future Editor updates. If node UUID metadata is unavailable, customization and node mutations are disabled rather than guessing a node.
 
 
+## Patch 2 — unified menu and click-to-fold
+
+- Menus are grouped at **Panel → vHierarchy → Settings / Palette, Enable / Disable, Refresh Hierarchy, Diagnostics**.
+- Click the visible guide line (ancestor rail or child elbow) to collapse its corresponding expanded parent using Cocos's native arrow. No Scene state is assigned directly.
+- In Settings / Palette, **Click hierarchy lines to collapse parent** toggles this behavior (enabled by default). Modifier-clicks, labels, icons, drag handles, and renamed nodes are excluded; uncertain virtualized tree links are ignored.
+- Requires verification in the running Cocos Creator 3.8.8 Editor (click precision and pane behavior).
+
 ## Latest test iteration (still 0.1.0)
 
 - Fixed `toggle-active` attempting to write to a readonly Vue node (`item.node.active = ...`). All mutations now use an isolated Scene IPC command; the native Hierarchy determines the updated state.
@@ -22,7 +29,7 @@ See [the full phased feature-parity plan](https://github.com/PhuNope/cocos-vHier
 
 1. Extract `vHierarchy-0.1.0-test.zip` into your project's `extensions` directory. The resulting path must be `<cocos-project>/extensions/cocos-vhierarchy/package.json`.
 2. In Cocos Creator, refresh the extension from **Extension Manager**, or restart the Editor.
-3. Open the native **Hierarchy** panel. The top bar displays `vH`. Open the **Panel → vHierarchy: Settings / Palette** menu to configure it.
+3. Open the native **Hierarchy** panel. The top bar displays `vH`. Open the **Panel → vHierarchy → Settings / Palette** menu to configure it.
 4. Hover any node, then **Alt + right-click** for color/icon, recursive application, or reset. Hover a row to see the active toggle (if the node is editable).
 5. In the toolbar, type a node name to dim nonmatching rows; the star bookmarks the last hovered node. Click a bookmark to select it. Right-click a bookmark to remove it.
 
@@ -73,4 +80,4 @@ Requires a recent TypeScript compiler, then `npm run build`, `npm test`, `npm ru
 - [ ] Bookmark/unbookmark/select; restart the Editor; verify persistence
 - [ ] Open existing scenes with many collapsed nodes; ensure guide connectors never obscure native controls
 
-If a test fails, use **Panel → vHierarchy: Diagnostics** and copy logs from the Editor console. Also inspect `window.__vHierarchy388?.stats()` in the main renderer DevTools.
+If a test fails, use **Panel → vHierarchy → Diagnostics** and copy logs from the Editor console. Also inspect `window.__vHierarchy388?.stats()` in the main renderer DevTools.

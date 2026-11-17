@@ -1,7 +1,7 @@
 /** Core domain objects. No Editor, Electron or DOM dependencies. */
 export const FEATURES = [
   'navigationBar', 'componentMinimap', 'activationToggle', 'hierarchyLines',
-  'zebraStriping', 'minimalMode', 'sceneSelector', 'keyboardShortcuts',
+  'zebraStriping', 'minimalMode', 'sceneSelector', 'keyboardShortcuts', 'foldOnGuideClick',
 ] as const;
 export type Feature = typeof FEATURES[number];
 export type GuideMode = 'tree' | 'minimal';
@@ -23,7 +23,7 @@ export const LEGACY_ICONS = ['⭐', '📁', '📷', '💡', '🎵', '🎮', '�
 export const DEFAULT_OPTIONS: Options = {
   enabled: true, navigationBar: true, componentMinimap: true, activationToggle: true,
   hierarchyLines: true, zebraStriping: true, minimalMode: false, sceneSelector: false,
-  keyboardShortcuts: true, guideMode: 'tree', colorSaturation: 1, colorBrightness: 1,
+  keyboardShortcuts: true, foldOnGuideClick: true, guideMode: 'tree', colorSaturation: 1, colorBrightness: 1,
 };
 export function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));

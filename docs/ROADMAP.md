@@ -15,6 +15,13 @@ Baseline inputs: supplied Unity `vHierarchy.zip`, Cocos 3.8.8 `app.asar.zip`, an
 
 **Assets:** The supplied Unity ZIP includes no original standalone PNG/SVG UI icons. `VHierarchyPalette.ResetIcons()` lists **Unity built-in Editor icon names**. 12 original SVG replacements in `static/icons` map their semantic categories; these are not the original Unity icon bitmaps. The supplied `Read me.pdf` contains an actual Unity menu screenshot for visual reference.
 
+## Patch 2 — implemented, pending GUI validation
+
+- [x] Group existing commands under **Panel → vHierarchy → ...**.
+- [x] Click directly on the guides to collapse the associated native expanded parent (ancestor rail and elbow). Hits are limited to visible line geometry and ignore native controls and modifier clicks.
+- [x] Project-scoped `foldOnGuideClick` option, default enabled; pure geometry tests include margin-indented rows, invalid virtualized gaps, last branches, lower rails, and elbows.
+- [ ] Validate the behavior manually in Cocos Creator 3.8.8, including narrow panes and DPI/zoom changes.
+
 ## M0 — Patch 1 (implemented)
 - [x] Active Toggle uses isolated `scene:query-node` + `scene:set-property` (record true), no Vue data mutation, duplicate-operation guard.
 - [x] Native padding/margin-derived Hierarchy line geometry aligned with tested v0.8.8 hook, computed icon/text anchor, last-sibling endings and missing-ancestor handling.

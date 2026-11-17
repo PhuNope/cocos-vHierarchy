@@ -16,23 +16,23 @@
   "contributions": {
     "menu": [
       {
-        "path": "i18n:menu.panel",
-        "label": "vHierarchy: Settings / Palette",
+        "path": "i18n:menu.panel/vHierarchy",
+        "label": "Settings / Palette",
         "message": "open-settings"
       },
       {
-        "path": "i18n:menu.panel",
-        "label": "vHierarchy: Enable / Disable",
+        "path": "i18n:menu.panel/vHierarchy",
+        "label": "Enable / Disable",
         "message": "toggle-enabled"
       },
       {
-        "path": "i18n:menu.panel",
-        "label": "vHierarchy: Refresh Hierarchy",
+        "path": "i18n:menu.panel/vHierarchy",
+        "label": "Refresh Hierarchy",
         "message": "refresh"
       },
       {
-        "path": "i18n:menu.panel",
-        "label": "vHierarchy: Diagnostics",
+        "path": "i18n:menu.panel/vHierarchy",
+        "label": "Diagnostics",
         "message": "diagnostics"
       }
     ],

@@ -29,3 +29,9 @@ test('new SVG icon keys and old emoji settings remain supported',()=>{
   assert.equal(sanitizeAppearance({icon:'folder'}).icon,'folder');
   assert.equal(sanitizeAppearance({icon:'📁'}).icon,'📁');
 });
+
+test('guide click folding is on by default and is persisted as a boolean',()=>{
+  assert.equal(sanitizeState({}).options.foldOnGuideClick,true);
+  assert.equal(sanitizeState({options:{foldOnGuideClick:false}}).options.foldOnGuideClick,false);
+  assert.equal(sanitizeState({options:{foldOnGuideClick:'false'}}).options.foldOnGuideClick,true);
+});

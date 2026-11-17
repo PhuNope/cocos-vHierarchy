@@ -134,7 +134,8 @@ test('Google icon palette uses searchable allowlisted catalog with independent t
   assert.match(renderer,/setMaterialSymbols\(names\)/);
   assert.match(renderer,/search\.type = 'search'/);
   assert.match(renderer,/search\.addEventListener\('input', drawIconGrid\)/);
-  assert.match(renderer,/\.filter\(key => key\.toLowerCase\(\)\.includes\(query\)\)/);
+  assert.match(renderer,/key\.toLowerCase\(\)\.includes\(query\)/);
+  assert.match(renderer,/customName\.toLowerCase\(\)\.includes\(query\)/);
   assert.match(renderer,/candidates = filtered\.slice\(0, 72\)/);
   assert.match(renderer,/iconColor\.type = 'color'/);
   assert.match(renderer,/\.vh-tinted-icon \{/);

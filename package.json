@@ -91,6 +91,16 @@
         "methods": [
           "sceneReady"
         ]
+      },
+      "import-icon": {
+        "methods": [
+          "importIcon"
+        ]
+      },
+      "remove-icon": {
+        "methods": [
+          "removeIcon"
+        ]
       }
     }
   },

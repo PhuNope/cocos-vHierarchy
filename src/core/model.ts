@@ -1,5 +1,6 @@
 /** Core domain objects. No Editor, Electron or DOM dependencies. */
 import { isMaterialIcon } from './material-catalog';
+import { CustomIcon, isCustomIcon, sanitizeCustomIcons } from './custom-icons';
 export const FEATURES = [
   'navigationBar', 'activationToggle', 'hierarchyLines',
   'zebraStriping', 'minimalMode', 'sceneSelector', 'keyboardShortcuts', 'foldOnGuideClick', 'showNodeLayers', 'colorGradientsEnabled',
@@ -14,11 +15,11 @@ export interface Options extends Record<Feature, boolean> {
 }
 export interface Appearance { color?: number; icon?: string; iconColor?: string; recursiveColor?: boolean; recursiveIcon?: boolean; }
 export interface Bookmark { uuid: string; name: string; }
-export interface State { options: Options; appearances: Record<string, Appearance>; bookmarks: Bookmark[]; }
+export interface State { options: Options; appearances: Record<string, Appearance>; bookmarks: Bookmark[]; customIcons: CustomIcon[]; }
 
 /** Based on the 1 grey + 8 rainbow slots in Unity VHierarchyPalette.cs. */
 export const PALETTE = ['#777d89', '#b35e68', '#b48e4f', '#a9a857', '#61a886', '#5d94b5', '#737cc2', '#a36bb4', '#b56e9d'];
-export const ICONS = ['folder','camera','light','script','particle','physics','audio','material','prefab','canvas','settings','favorite'];
+export const ICONS = ['folder','camera','light','script','particle','physics','audio','material','prefab','canvas','settings','favorite','animation','sprite','atlas','shader','scene','timeline','transform','database','service','network','input','mouse','gamepad','group','grid','eye','lock','key','bug','flag','star','heart','ui_panel','code'];
 /** Legacy 0.1.0 emojis continue to load in saved project settings. */
 export const LEGACY_ICONS = ['⭐', '📁', '📷', '💡', '🎵', '🎮', '🧩', '🎨', '⚙', '🔒', '🎬', '🖼'];
 /**
@@ -51,7 +52,7 @@ export function sanitizeAppearance(input: unknown): Appearance {
   const raw = input as Record<string, unknown>;
   const out: Appearance = {};
   if (typeof raw.color === 'number' && Number.isInteger(raw.color) && raw.color >= 0 && raw.color < PALETTE.length) out.color = raw.color;
-  if (typeof raw.icon === 'string' && (raw.icon === '' || ICONS.includes(raw.icon) || LEGACY_ICONS.includes(raw.icon) || isMaterialIcon(raw.icon))) out.icon = raw.icon;
+  if (typeof raw.icon === 'string' && (raw.icon === '' || ICONS.includes(raw.icon) || LEGACY_ICONS.includes(raw.icon) || isMaterialIcon(raw.icon) || isCustomIcon(raw.icon))) out.icon = raw.icon;
   if (typeof raw.iconColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(raw.iconColor)) out.iconColor = raw.iconColor;
   if (typeof raw.recursiveColor === 'boolean') out.recursiveColor = raw.recursiveColor;
   if (typeof raw.recursiveIcon === 'boolean') out.recursiveIcon = raw.recursiveIcon;
@@ -89,7 +90,7 @@ export function sanitizeState(input: unknown): State {
   const bookmarks = Array.isArray(raw.bookmarks) ? raw.bookmarks.filter((v): v is Bookmark =>
     !!v && typeof v === 'object' && isNodeId(v.uuid) && typeof v.name === 'string'
   ).slice(0, 32).map(({uuid, name}) => ({uuid, name: name.slice(0, 80)})) : [];
-  return { options, appearances, bookmarks };
+  return { options, appearances, bookmarks, customIcons: sanitizeCustomIcons(raw.customIcons) };
 }
 export function resolveAppearance(uuid: string, ancestors: string[], data: Record<string, Appearance>): Appearance {
   const current = data[uuid] ?? {};

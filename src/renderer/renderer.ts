@@ -8,7 +8,8 @@
   interface Opts extends Record<Flag, boolean> { enabled: boolean; guideMode: 'tree' | 'minimal'; colorSaturation: number; colorBrightness: number; }
   interface Appearance { color?: number; icon?: string; iconColor?: string; recursiveColor?: boolean; recursiveIcon?: boolean; }
   interface Bookmark { uuid: string; name: string; }
-  interface State { options: Opts; appearances: Record<string, Appearance>; bookmarks: Bookmark[]; }
+  interface CustomIcon { id: string; name: string; }
+  interface State { options: Opts; appearances: Record<string, Appearance>; bookmarks: Bookmark[]; customIcons: CustomIcon[]; }
   interface TreeDump { uuid?: string; name?: string; depth?: number; parent?: string; active?: boolean; locked?: boolean; readonly?: boolean; isScene?: boolean; components?: Array<{ type?: string; extends?: string[] }>; prefab?: { state?: number }; layer?: unknown; }
   interface Item { guide?: { group: Item[]; index: number; result: VHierarchyGuides.Result }; ancestorIds?: string[]; row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; nameEl: HTMLElement | null; depth: number; padding: number; margin: number; anchor: number; searching: boolean; }
   interface Hook { refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(names: string[]): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
@@ -18,7 +19,7 @@
   if (w.__vHierarchy388) { w.__vHierarchy388.refresh(); return { status: 'running', reused: true }; }
 
   const PALETTE = ['#777d89', '#b35e68', '#b48e4f', '#a9a857', '#61a886', '#5d94b5', '#737cc2', '#a36bb4', '#b56e9d'];
-  const ICONS = ['folder','camera','light','script','particle','physics','audio','material','prefab','canvas','settings','favorite'];
+  const ICONS = ['folder','camera','light','script','particle','physics','audio','material','prefab','canvas','settings','favorite','animation','sprite','atlas','shader','scene','timeline','transform','database','service','network','input','mouse','gamepad','group','grid','eye','lock','key','bug','flag','star','heart','ui_panel','code'];
   const MATERIAL_PREFIX = 'material:';
   const GOOGLE_MATERIAL_CSS = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:FILL,GRAD,opsz,wght@0,0,24,400&display=swap';
   const GUIDE_PROPS = ['--vh-guide-images', '--vh-guide-positions', '--vh-guide-sizes', '--vh-guide-width',
@@ -36,7 +37,7 @@
   const DEFAULT: State = {
     options: { enabled:true, navigationBar:true, activationToggle:true, hierarchyLines:true,
       zebraStriping:true, minimalMode:false, sceneSelector:false, keyboardShortcuts:true, foldOnGuideClick:true,
-      showNodeLayers:true, colorGradientsEnabled:true, guideMode:'tree', colorBrightness:1, colorSaturation:1 }, appearances:{}, bookmarks:[],
+      showNodeLayers:true, colorGradientsEnabled:true, guideMode:'tree', colorBrightness:1, colorSaturation:1 }, appearances:{}, bookmarks:[], customIcons:[],
   };
   const CSS = `
     .vh-toolbar { display:flex; align-items:center; gap:4px; height:27px; padding:0 6px; box-sizing:border-box; border-bottom:1px solid var(--color-default-border, #3d454c); background:var(--color-normal-fill, #292e35); color:var(--color-normal-contrast,#ced7df); overflow:hidden; font-size:11px; }
@@ -217,6 +218,9 @@
       padding:6px 8px; border:1px solid #68798a; border-radius:5px;
       background:#1d242c; color:#edf3f9; font:12px Arial,sans-serif; }
     .vh-icon-count { color:#a8b4c1; font-size:10px; margin-top:5px; }
+    .vh-import-file { box-sizing:border-box; display:block; width:100%; margin:8px 0 4px; padding:5px; font:11px Arial,sans-serif; color:#dce8f7; border:1px dashed #8294a6; border-radius:4px; }
+    .vh-import-status { font-size:11px; color:#b8cadc; margin:5px 0; white-space:normal; }
+    .vh-import-status[data-error='true'] { color:#f3abab; }
     .vh-icon-palette { display:flex; flex-wrap:wrap; gap:5px; align-items:center; margin-top:6px; }
     .vh-icon-palette input[type=color] { width:32px; height:26px; padding:2px; background:#29323c;
       border:1px solid #7a8796; border-radius:4px; cursor:pointer; }
@@ -920,22 +924,26 @@
     const recursive=el('label');const check=el('input') as HTMLInputElement;check.type='checkbox';check.checked=!!current.recursiveColor;
     check.addEventListener('change',()=>{current.recursiveColor=check.checked;void persistAppearance(item,{...current});});
     recursive.append(check,document.createTextNode('Apply color to descendants'));wrap.append(recursive);
-    wrap.append(el('span','','Icon · Local SVG + Google Material Symbols'));
+    wrap.append(el('span','','Icon · Local SVG + Custom + Google Material Symbols'));
     const search=el('input','vh-icon-search') as HTMLInputElement;
     search.type='search';search.placeholder='Search icons (home, code, folder…)';
     search.setAttribute('aria-label','Search icons by name');
     const iconCount=el('div','vh-icon-count');
     const icons=el('div','vh-grid');
-    const allIcons=[...ICONS,...materialSymbols.map(name=>MATERIAL_PREFIX+name)];
+    const allIcons=[...ICONS,...(state.customIcons || []).map(icon=>icon.id),...materialSymbols.map(name=>MATERIAL_PREFIX+name)];
     const drawIconGrid=():void=>{
       const query=search.value.trim().toLowerCase();
-      const filtered=allIcons.filter(key=>key.toLowerCase().includes(query));
+      const filtered=allIcons.filter(key => {
+        const customName=state.customIcons?.find(icon=>icon.id===key)?.name || '';
+        return key.toLowerCase().includes(query) || customName.toLowerCase().includes(query);
+      });
       const candidates=filtered.slice(0,72);
       if(current.icon && filtered.includes(current.icon) && !candidates.includes(current.icon))candidates.unshift(current.icon);
-      iconCount.textContent=`${filtered.length} matching icons · showing ${candidates.length} · Google icons need internet`;
+      iconCount.textContent=`${filtered.length} matching icons · showing ${candidates.length} · Custom icons work offline; Google font needs internet`;
       icons.replaceChildren();
       for(const key of candidates) {
-        const b=btn('',key,()=>{
+        const label=state.customIcons?.find(icon=>icon.id===key)?.name || key;
+        const b=btn('',label,()=>{
           current.icon=key;
           for(const button of icons.querySelectorAll('button'))button.setAttribute('aria-pressed',String(button===b));
           void persistAppearance(item,{...current});
@@ -962,6 +970,52 @@
     wrap.append(search,iconCount,icons);
     drawIconGrid();
     search.focus();
+    const importFile=el('input','vh-import-file') as HTMLInputElement;
+    importFile.type='file'; importFile.accept='.png,.webp,.svg,image/png,image/webp,image/svg+xml';
+    importFile.setAttribute('aria-label','Import custom PNG, WebP or SVG icon');
+    const importStatus=el('div','vh-import-status','Import an image for offline use in this project (up to 64 icons).');
+    importStatus.setAttribute('role','status');
+    importFile.addEventListener('change',()=>{
+      const file=importFile.files?.[0]; if(!file)return;
+      void (async()=>{
+        importFile.disabled=true;
+        importStatus.textContent='Importing '+file.name+'…';
+        importStatus.removeAttribute('data-error');
+        try {
+          const prepared=await VHierarchyIconFiles.rasterize(file);
+          const imported=await req('cocos-vhierarchy','import-icon',prepared.name,prepared.dataUrl) as CustomIcon|null;
+          if(!imported?.id || !/^custom:[0-9a-f]{20}$/.test(imported.id)) throw new Error('Extension rejected imported icon');
+          iconAssets[imported.id]=prepared.dataUrl;
+          state.customIcons=[...(state.customIcons || []).filter(entry=>entry.id!==imported.id),imported];
+          if(!allIcons.includes(imported.id)) allIcons.splice(ICONS.length,0,imported.id);
+          current.icon=imported.id;
+          search.value=''; drawIconGrid();
+          await persistAppearance(item,{...current});
+          importStatus.textContent=`Imported “${imported.name}” and applied to node (offline).`;
+        } catch(error) {
+          importStatus.textContent=String(error); importStatus.setAttribute('data-error','true');
+          logError('import-icon',error);
+        } finally {importFile.disabled=false;importFile.value='';}
+      })();
+    });
+    wrap.append(importFile,importStatus);
+    const deleteCustom=btn('Delete custom icon','Remove this icon from the project library',()=>{
+      const id=current.icon;
+      if(!id?.startsWith('custom:'))return;
+      if(!window.confirm('Delete this custom icon from the project? Nodes using it will lose this icon.'))return;
+      void (async()=>{
+        try {
+          if(!await req('cocos-vhierarchy','remove-icon',id))throw new Error('Could not delete custom icon');
+          state.customIcons=(state.customIcons || []).filter(icon=>icon.id!==id);
+          delete iconAssets[id];
+          const index=allIcons.indexOf(id);if(index>=0)allIcons.splice(index,1);
+          delete current.icon;delete current.iconColor;current.recursiveIcon=false;
+          search.value='';drawIconGrid();
+          importStatus.textContent='Custom icon removed from this project.';
+        }catch(error){logError('remove-icon',error);importStatus.textContent=String(error);importStatus.setAttribute('data-error','true');}
+      })();
+    });
+    wrap.append(deleteCustom);
     const removeIcon=btn('Clear icon','Remove icon',()=>{
       delete current.icon;delete current.iconColor;current.recursiveIcon=false;
       iconCheck.checked=false;drawIconGrid();void persistAppearance(item,{...current});

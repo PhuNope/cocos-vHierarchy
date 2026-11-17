@@ -6,7 +6,7 @@ const child = 'c81231fe-3d67-4b3b-9b2a-fd0487a71422';
 test('sensible defaults and data table from Unity',()=>{
   const s=sanitizeState({});
   assert.equal(s.options.enabled,true);assert.equal(s.options.sceneSelector,false);
-  assert.equal(PALETTE.length,9);assert.equal(ICONS.length,12);
+  assert.equal(PALETTE.length,9);assert.equal(ICONS.length,36);
   assert.ok(ICONS.includes('folder'));
 });
 test('only known settings survive untrusted user configuration',()=>{

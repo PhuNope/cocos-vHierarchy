@@ -88,7 +88,7 @@ Unity source includes feature toggles in `VHierarchyMenu.cs`, row visuals in `VH
 ## Known risks / decisions
 
 - Private Hierarchy DOM/Vue APIs may change between Creator versions: detection and graceful no-op are required.
-- Unity Editor built-in icons cannot be copied from the supplied archive because they are not included. The 12 packaged SVGs are **replacements**, not original Unity asset bytes.
+- Unity Editor built-in icons cannot be copied from the supplied archive because they are not included. The bundled SVGs are **replacements**, not original Unity asset bytes.
 - Certain Unity functions have no direct Cocos counterpart (Unity default parent, SceneView frame, global multi-scene navigation): implement only with verified Cocos Editor equivalents, document any differences.
 - This code has automated test coverage but **has not been executed inside a real Cocos Creator 3.8.8 GUI in this environment**. The user’s installed Editor is the final integration gate.
 
@@ -143,3 +143,12 @@ Curated searchable Material Symbols Outlined catalog with official Google Fonts 
 - [x] Indicate inherited color from a recursive parent distinctly, without persisting it as an explicit child override.
 - [x] Exercise the compiled popup logic with DOM doubles and add regression tests for selection precedence.
 - [ ] Confirm swatch selected-state visuals in Creator 3.8.8 GUI, including selection while IPC is pending.
+
+
+### M2 update — Patch 17 (0.1.0): offline SVG library + custom icon import
+
+- [x] 36 bundled local SVG icons (24 new original assets, tintable and searchable), no runtime network dependency.
+- [x] Import SVG/PNG/WebP through the Palette; rasterize safely to project-local PNG, SHA256-derived identifiers, atomic project settings and Editor-restart persistence.
+- [x] Custom icon name search, per-node tint and recursive behavior, confirmation-based deletion with assignment cleanup, size/dimension/input sanitization.
+- [x] Main process tests for byte validation, persistence, deduplication, deletion and invalid IDs, plus renderer SVG validation and Palette wiring tests.
+- [ ] Test actual Creator 3.8.8 GUI, file picker, Blob CSP behavior, and import/reload on Windows. The 184 Google Material Symbols continue to require a network font; offline import is their alternative, not a claim that all Google icons are bundled.

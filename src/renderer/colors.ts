@@ -117,6 +117,16 @@ namespace VHierarchyColors {
     return { background: `rgb(${fill.join(',')})`, gradient, accent: `rgb(${accent.join(',')})` };
   }
 
+  /** Selection state for the popover swatch grid. An explicit node color
+   * always overrides inherited recursive color. The helper is DOM-free so the
+   * initial selection and click/clear updates use identical rules. */
+  export function paletteSelection(explicit: number | undefined, inherited: number | undefined, count: number): { index?: number; inherited: boolean } {
+    const valid = (n: number | undefined): n is number => Number.isInteger(n) && n !== undefined && n >= 0 && n < count;
+    if (valid(explicit)) return { index: explicit, inherited: false };
+    if (valid(inherited)) return { index: inherited, inherited: true };
+    return { inherited: false };
+  }
+
   export function swatch(hex: string, theme: Theme, options: Options): string {
     const c = rgb(hex, theme, options);
     return `rgb(${c.join(',')})`;

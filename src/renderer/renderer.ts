@@ -10,7 +10,7 @@
   interface Bookmark { uuid: string; name: string; }
   interface State { options: Opts; appearances: Record<string, Appearance>; bookmarks: Bookmark[]; }
   interface TreeDump { uuid?: string; name?: string; depth?: number; parent?: string; active?: boolean; locked?: boolean; readonly?: boolean; isScene?: boolean; components?: Array<{ type?: string; extends?: string[] }>; prefab?: { state?: number }; layer?: unknown; }
-  interface Item { guide?: { group: Item[]; index: number; result: VHierarchyGuides.Result }; row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; nameEl: HTMLElement | null; depth: number; padding: number; margin: number; anchor: number; searching: boolean; }
+  interface Item { guide?: { group: Item[]; index: number; result: VHierarchyGuides.Result }; ancestorIds?: string[]; row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; nameEl: HTMLElement | null; depth: number; padding: number; margin: number; anchor: number; searching: boolean; }
   interface Hook { refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(names: string[]): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
@@ -226,8 +226,13 @@
     .vh-symbol > .vh-material-symbol { flex:0 0 19px; width:19px; height:19px; line-height:19px; font-size:19px; }
     .vh-symbol > .vh-tinted-icon { width:18px; height:18px; flex:0 0 18px; }
     .vh-colors { display:grid; grid-template-columns:repeat(9, 1fr); gap:5px; margin:7px 0; }
-    .vh-swatch { width:19px; height:19px; border:1px solid #e1e7e966; border-radius:4px; padding:0; cursor:pointer; }
-    .vh-swatch[aria-pressed='true'] { outline:2px solid #c5d9f0; outline-offset:1px; }
+    .vh-swatch { position:relative; width:19px; height:19px; border:1px solid #e1e7e966; border-radius:4px; padding:0; cursor:pointer; }
+    .vh-swatch[aria-pressed='true'] { outline:2px solid #edf5ff; outline-offset:2px; border-color:#ffffff; box-shadow:0 0 0 1px #101820; }
+    .vh-swatch[aria-pressed='true']::after { content:'✓'; display:flex; align-items:center; justify-content:center;
+      position:absolute; inset:0; color:white; background:#0005; border-radius:3px; font:bold 13px/1 Arial,sans-serif; text-shadow:0 1px 2px #000; }
+    .vh-swatch[data-vh-inherited='true'] { outline-style:dashed; }
+    .vh-selected-color { color:#b8c7d6; font-size:11px; margin:3px 0 7px; }
+
     .vh-symbol { width:24px; height:24px; background:#48515c; border:1px solid #ffffff21; border-radius:4px; cursor:pointer; padding:3px; display:flex; align-items:center; justify-content:center; }
     .vh-symbol img { width:16px; height:16px; object-fit:contain; pointer-events:none; }
     .vh-footer { font-size:10px; color:#a8b4c1; margin-top:8px; }
@@ -715,6 +720,7 @@
             const item=group[i]; item.depth=geometry.nodes[i].depth;
             if (!geometry.nodes[i].valid) { stack.length=0; drawItem(item,i,[],tints); views.push(item); continue; }
             stack.length=Math.min(stack.length,item.depth);
+            item.ancestorIds=stack.map(parent=>parent.uuid).filter(Boolean);
             drawItem(item,i,stack.slice(),tints);
             views.push(item); stack[item.depth]=item;
           }
@@ -872,8 +878,45 @@
     wrap.append(el('span','','Color'));
     const colors=el('div','vh-colors');
     const theme=editorTheme();
-    PALETTE.forEach((c,i)=>{ const sw=btn('','Color '+(i+1),()=>{current.color=i;void persistAppearance(item,{...current});},'vh-swatch');sw.style.background=VHierarchyColors.swatch(c,theme,state.options); sw.setAttribute('aria-pressed',String(current.color===i)); colors.append(sw); });
-    wrap.append(colors,btn('Clear color','Remove color',()=>{delete current.color;current.recursiveColor=false;void persistAppearance(item,{...current});}));
+    const swatches: HTMLButtonElement[]=[];
+    const colorStatus=el('div','vh-selected-color');
+    const inheritedColor=():number|undefined=>{
+      // Follow the same ancestor order as drawItem; the closest recursive parent wins.
+      let slot: number|undefined;
+      for(const id of item.ancestorIds || []) {
+        const parent=state.appearances[id];
+        if(parent?.recursiveColor && parent.color!==undefined)slot=parent.color;
+      }
+      return slot;
+    };
+    const refreshColorSelection=():void=>{
+      const selection=VHierarchyColors.paletteSelection(current.color,inheritedColor(),PALETTE.length);
+      swatches.forEach((sw,i)=>{
+        const pressed=selection.index===i;
+        sw.setAttribute('aria-pressed',String(pressed));
+        sw.setAttribute('data-vh-inherited',pressed && selection.inherited ? 'true' : 'false');
+        sw.setAttribute('aria-label',`Color ${i+1}${pressed ? (selection.inherited ? ' (inherited from parent)' : ' (selected)') : ''}`);
+      });
+      colorStatus.textContent=selection.index===undefined ? 'No color selected'
+        : `Selected: Color ${selection.index+1}${selection.inherited ? ' · inherited from parent' : ''}`;
+    };
+    PALETTE.forEach((c,i)=>{
+      const sw=btn('','Color '+(i+1),()=>{
+        current.color=i;
+        refreshColorSelection(); // The popup remains open; update its checkmark immediately.
+        void persistAppearance(item,{...current});
+      },'vh-swatch');
+      sw.style.background=VHierarchyColors.swatch(c,theme,state.options);
+      swatches.push(sw);colors.append(sw);
+    });
+    const clearColor=btn('Clear color','Remove color',()=>{
+      delete current.color;current.recursiveColor=false;
+      check.checked=false;
+      refreshColorSelection();
+      void persistAppearance(item,{...current});
+    });
+    wrap.append(colors,colorStatus,clearColor);
+    refreshColorSelection();
     const recursive=el('label');const check=el('input') as HTMLInputElement;check.type='checkbox';check.checked=!!current.recursiveColor;
     check.addEventListener('change',()=>{current.recursiveColor=check.checked;void persistAppearance(item,{...current});});
     recursive.append(check,document.createTextNode('Apply color to descendants'));wrap.append(recursive);

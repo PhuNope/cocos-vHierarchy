@@ -135,3 +135,11 @@ Curated searchable Material Symbols Outlined catalog with official Google Fonts 
 - [x] Preserve neutral Rename state and clean up CSS variables on unpaint/extension unload.
 - [x] Unit and renderer regressions for different hues, dark/light theme, inheritance and gradient toggle.
 - [ ] Confirm selected color in Cocos Creator 3.8.8 GUI on both themes and when changing palette while a node remains selected.
+
+### M2 update — Patch 16: Palette swatch selection synchronization (0.1.0)
+
+- [x] Mark the selected color in the open palette immediately on click, with a visible checkmark and high-contrast outline.
+- [x] Display the saved color when reopening the palette; clearing a color removes the direct selection.
+- [x] Indicate inherited color from a recursive parent distinctly, without persisting it as an explicit child override.
+- [x] Exercise the compiled popup logic with DOM doubles and add regression tests for selection precedence.
+- [ ] Confirm swatch selected-state visuals in Creator 3.8.8 GUI, including selection while IPC is pending.

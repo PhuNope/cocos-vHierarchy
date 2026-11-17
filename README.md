@@ -7,6 +7,13 @@
 This is a TypeScript Cocos Editor extension inspired by the provided Unity vHierarchy source. It **never patches `app.asar`**. The renderer layer uses a reversible, private Hierarchy DOM/Vue overlay; it may need adjustments for other 3.8.x builds or future Editor updates. If node UUID metadata is unavailable, customization and node mutations are disabled rather than guessing a node.
 
 
+## Patch 16 (0.1.0) — Live selected color indicator in Palette
+
+- Fixed the palette swatches' selection state: `aria-pressed` previously initialized only on popup creation, so clicking another color changed the node but left the old swatch highlighted. Selected swatch is now updated immediately, before persistence IPC completes.
+- Added a strong visible checkmark and outline, plus a compact "Selected: Color N" label. Clear color removes the selection. The current effective color inherited from a recursive parent is displayed with a dashed indicator and "inherited from parent" text until a local override is set.
+- The existing node name, Layer badge, native Cocos component icon, Search, Lock and Active UI are unchanged. The palette still saves only the user's explicitly chosen node color in project settings; inherited colors remain derived.
+- Added behavior-level DOM tests exercising the actual compiled `showPalette` function for initial state, selection changes, clearing and inheritance, plus a pure domain test for selection precedence. Actual GUI behavior on Cocos Creator 3.8.8 should still be verified.
+
 ## Patch 15 (0.1.0) — Palette-colored selected highlight
 
 - Fixed a contrast problem in Cocos Creator 3.8.8: native Hierarchy selection paints an opaque `--color-active-fill` (blue) on `.drag-item`, beneath the previous low-opacity vHierarchy gradient. Thus, assigning a palette color often appeared to have no effect while the node remained selected.

@@ -84,3 +84,14 @@ test('selection paint supports gradient-off and recursive colors without losing 
   assert.doesNotMatch(flat.gradient,/90deg/);
   assert.match(flat.accent,/^rgb\(/);
 });
+
+test('color swatch selection prioritizes explicit color over recursive inheritance',()=>{
+  const own=colors.paletteSelection(5,3,9);
+  assert.equal(own.index,5); assert.equal(own.inherited,false);
+  const inherited=colors.paletteSelection(undefined,3,9);
+  assert.equal(inherited.index,3); assert.equal(inherited.inherited,true);
+  const noColor=colors.paletteSelection(undefined,undefined,9);
+  assert.equal(noColor.index,undefined); assert.equal(noColor.inherited,false);
+  assert.equal(colors.paletteSelection(12,undefined,9).index,undefined);
+  assert.equal(colors.paletteSelection(undefined,-1,9).index,undefined);
+});

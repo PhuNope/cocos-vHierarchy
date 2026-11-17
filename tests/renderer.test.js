@@ -167,3 +167,12 @@ test('palette selection overrides native blue only for tinted rows and keeps ren
   assert.match(renderer,/for \(const prop of PAINT_PROPS\)\s*item\.row\.style\.removeProperty\(prop\)/);
   assert.match(renderer,/for \(const prop of PAINT_PROPS\)\s*h\.style\.removeProperty\(prop\)/);
 });
+
+test('palette swatch gets a visible persistent checkmark and inherited distinction',()=>{
+  assert.match(renderer,/\.vh-swatch\[aria-pressed='true'\]::after \{ content:'✓'/);
+  assert.match(renderer,/\.vh-swatch\[data-vh-inherited='true'\] \{ outline-style:dashed/);
+  assert.match(renderer,/const refreshColorSelection\s*=/);
+  assert.match(renderer,/sw\.setAttribute\('aria-pressed',\s*String\(pressed\)\)/);
+  assert.match(renderer,/current\.color\s*=\s*i;\s*refreshColorSelection\(\)/);
+  assert.match(renderer,/delete current\.color;\s*current\.recursiveColor\s*=\s*false;\s*check\.checked\s*=\s*false;\s*refreshColorSelection\(\)/);
+});

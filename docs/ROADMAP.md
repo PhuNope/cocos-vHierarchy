@@ -1,63 +1,101 @@
-# vHierarchy for Cocos Creator — Unity feature parity roadmap
+# vHierarchy for Cocos Creator — Unity feature-parity roadmap
 
-Baseline inputs: supplied Unity `vHierarchy.zip`, Cocos 3.8.8 `app.asar.zip`, and supplied `hierarchy-visual-hook` v0.8.8.
-
-**Development contract:** `0.1.0`, manifest `editor: >=3.8.2`, push normal commits to `main` after each iteration; **no Git tag / GitHub Release until the owner explicitly says “chốt”.**
+Baseline: Unity source supplied as `vHierarchy.zip`, Cocos Editor source supplied as `app.asar.zip` (3.8.8), and hook baseline `hierarchy-visual-hook-ccrecord-nested-fix-v0.8.8-creator-3.8.8.zip`. All work-in-progress plugin builds remain **0.1.0** (`editor: >=3.8.2`), with normal Git commits to `main`. **No tag and no GitHub Release before the owner says “chốt”.**
 
 ## Reference audit
-- `VHierarchyMenu.cs`: toggles for Navigation Bar, Scene Selector, Component Minimap, Activation Toggle, Hierarchy Lines, Zebra Striping, Minimal Mode; shortcuts A/F/X/E/Shift-E/Ctrl-Shift-E/D.
-- `VHierarchyGUI.cs`: row background, icons, lines, minimap and active toggle.
-- `VHierarchyPalette.cs`, `VHierarchyPaletteEditor.cs`, `VHierarchyPaletteWindow.cs`: 1 gray + 8 rainbow colors, recursive flags, icon rows, editor and custom icons.
-- `VHierarchyData.cs`, `VHierarchyDataComponent.cs`, `VHierarchyNavbar.cs`: persistence/team mode, bookmarks and navigation.
-- `VHierarchyComponentWindow.cs`: popup/pinned component inspector.
-- `VHierarchySceneSelectorWindow.cs`: scene selection and search.
-- `VHierarchyController.cs`: hierarchy expansion/state management.
 
-**Assets:** The supplied Unity ZIP includes no original standalone PNG/SVG UI icons. `VHierarchyPalette.ResetIcons()` lists **Unity built-in Editor icon names**. 12 original SVG replacements in `static/icons` map their semantic categories; these are not the original Unity icon bitmaps. The supplied `Read me.pdf` contains an actual Unity menu screenshot for visual reference.
+Unity source includes feature toggles in `VHierarchyMenu.cs`, row visuals in `VHierarchyGUI.cs`, shortcuts in `VHierarchy.cs`, palette data and editors in `VHierarchyPalette.cs` / `VHierarchyPaletteEditor.cs` / `VHierarchyPaletteWindow.cs`, navigation and bookmarks in `VHierarchyNavbar.cs` / `VHierarchyData.cs`, component inspection in `VHierarchyComponentWindow.cs`, scene navigation in `VHierarchySceneSelectorWindow.cs`, and controller / tree expansion in `VHierarchyController.cs`.
 
-## Patch 3 — implemented, pending GUI validation
+**Asset limitation:** `vHierarchy.zip` contains `.cs`, `.meta`, `.asmdef` and `Read me.pdf`, *no original standalone PNG/SVG icon files*. `VHierarchyPalette.ResetIcons()` references Unity Editor built-in icons **by name**, rather than including them as image assets. `docs/reference/unity-features-menu.png` is an unmodified screenshot extracted from the supplied `Read me.pdf` for review only. For the editor UI we ship 12 original lightweight SVG substitutes in `static/icons/*.svg`, mapped to the Unity palette categories; these are not claimed to be copies of Unity internal icons. When actual custom icon assets are provided in the future, support direct import/mapping.
 
-- [x] Call `scene:snapshot` exactly once per successful Active mutation; keep failed Scene edits snapshot-free.
-- [x] Draw line guides after native Hierarchy row insertion or expand state changes using a tree-local MutationObserver; retain slow scan only as fallback.
-- [x] Hide/remove the plugin's component minimap and sanitize old option values.
-- [x] Replace activation glyph with a native checkbox, with disabled/read-only behavior and no row selection.
-- [x] Move native lock icon into a dedicated 20px left gutter, away from clickable hierarchy lines; clean up on unload.
-- [x] Unit/smoke regression suite: 28/28 tests.
-- [ ] Manual GUI verification in Cocos Creator 3.8.8 of dirty marker, Undo/Redo, lock positioning, line timing and native component icon preferences.
+## Current checkpoint: `0.1.0`, patch 3
 
-## Patch 2 — implemented, pending GUI validation
+- [x] Group four menu commands under **Panel → vHierarchy → ...** using the Creator 3.8 manifest submenu path, no four standalone top-level Panel entries.
+- [x] Guide hit-testing port: ancestor rails and direct elbows collapse their associated expanded parent using its **native expand arrow click**; protects control hit targets, modifier clicks, rename state and filtered/gapped trees. Project option `foldOnGuideClick` defaults true; tests cover vertical/lower/last/elbow and margin offsets.
+- [ ] Manual Creator 3.8.8 validation of exact visible hit regions, selection/drag effects, multi-pane behavior and zoom/HiDPI.
 
-- [x] Group existing commands under **Panel → vHierarchy → ...**.
-- [x] Click directly on the guides to collapse the associated native expanded parent (ancestor rail and elbow). Hits are limited to visible line geometry and ignore native controls and modifier clicks.
-- [x] Project-scoped `foldOnGuideClick` option, default enabled; pure geometry tests include margin-indented rows, invalid virtualized gaps, last branches, lower rails, and elbows.
-- [ ] Validate the behavior manually in Cocos Creator 3.8.8, including narrow panes and DPI/zoom changes.
+## Patch 3: focused usability fixes
 
-## M0 — Patch 1 (implemented)
-- [x] Active Toggle uses isolated `scene:query-node` + `scene:set-property` (record true), no Vue data mutation, duplicate-operation guard.
-- [x] Native padding/margin-derived Hierarchy line geometry aligned with tested v0.8.8 hook, computed icon/text anchor, last-sibling endings and missing-ancestor handling.
-- [x] 12 SVG icons integrated into palette and row, compatible with old emoji selections.
-- [x] TypeScript transpile / 14 automated tests.
-- [ ] Real running Cocos Creator 3.8.8 GUI smoke/regression test.
+- [x] `scene:snapshot` after each successful Active `scene:set-property` (not after rejected changes) to capture Undo and scene dirty state.
+- [x] Observe native `.tree` child insertion/expand attributes and redraw guides before the next paint. Periodic scan is only a recovery fallback.
+- [x] Remove component minimap and its saved option (native Cocos icon preference is unaffected).
+- [x] Replace Active glyph with a clickable native checkbox, stop row selection/drag event propagation.
+- [x] Dedicate a 20px left gutter to the native lock icon; ancestor rails stay in their own lane. Restored on unload.
+- [ ] Verify scene dirty marker/Undo, line latency and lock positioning in GUI with Creator 3.8.8.
 
-## M1 — Stabilize the native Hierarchy (P0)
-Validate Active click/A shortcut, dirty state, Undo/Redo, save/reopen, locked nodes, Prefab isolation, Scene switching and multi-selection. Compare guides pixel-by-pixel against the supplied v0.8.8 hook at multiple DPI/zoom settings. Check collapse, search, virtualization and panel docking, and disable/reload cleanup. **Exit:** no readonly errors, no scene corruption, accurate guides, reproducible Creator UI behavior.
+## Previous checkpoint: `0.1.0`, patch 1
 
-## M2 — Row visual parity with Unity (P0/P1)
-Theme-aware color gradients, saturation/brightness and true ancestor inheritance; icon replacement in native row slot rather than badge; custom icons (asset picker), prefab/lock/inactive decoration, rich component minimap and tooltip/Alt-click semantics, zebra striping and minimal density. **Exit:** paired reference screenshots, no clipping, no disabled native controls.
+- [x] Active Toggle no longer assigns to Vue tree dumps (immutable/read-only). Scene edits use `scene:query-node` + `scene:set-property` with `record: true`, and reject unexpected dumps/failed responses. Deduplicate in-flight toggles by node UUID; rely on native Scene update to rerender.
+- [x] Guides adapt the provided hook's geometry: computed padding/margin, step/depth inference, sibling endings, no guessed links across missing ancestors, elbow stops at native icon/name; CSS `::before/::after` draw in existing gutter.
+- [x] 12 compressed editor-safe SVG icon substitutes available in UI palette and displayed on rows; old emoji selections remain readable.
+- [x] Compile TypeScript to JavaScript, 13 automated tests (including frozen Scene dumps and guide parity).
+- [ ] Real Creator 3.8.8 GUI validation (required before declaring bug fixed in Editor, not runnable in CI).
 
-## M3 — Navbar and Scene Selector (P1)
-Bookmark pin/unpin, reorder, rename, stale/deleted references; navigation between Scene/Prefab; Scene selector search, keyboard navigation, pinned/recent items, unsaved-change confirmation, project-persistent settings. **Exit:** bookmarks survive reopen and no silent unsaved-scene loss.
+## Milestones and acceptance criteria
 
-## M4 — Keyboard/Scene commands (P1)
-`E` expand/collapse, `Shift+E` isolate, `Ctrl/Cmd+Shift+E` collapse all; `A` multi-node active when selected; `X` delete with native Undo; `F` frame Scene camera (not just select); `D` assign default parent and `Shift+D` reset only where Creator exposes safe APIs, otherwise implement a documented extension-scoped equivalent. Shortcut conflict and input-focus guards. **Exit:** each command covered by IPC regressions + Creator integration test.
+### M1 — Solid Hierarchy baseline (P0)
 
-## M5 — Component and advanced palette workflow (P1/P2)
-Component Window popover with pin/follow selection, supported native Inspector API; editable palette icon rows, custom image assets, color presets and import/export; Prefab/multi-scene and team persistence. **Exit:** cross-scene interactions and edits avoid data loss and runtime-game script injection.
+1. Run GUI matrix on 3.8.8: normal Scene, Prefab edit, locked node, disabled node, deeply nested trees, collapsed branches, search, multi-select, theme and HiDPI. Test Active Toggle click / `A` shortcut, Scene dirty indicator, Undo/Redo, save/reopen, no interference with existing Inspector data.
+2. Pixel-level comparison of guides vs supplied v0.8.8 hook (alignment with arrow and native icon, last-child stop, scroll/dock/virtualized rows). Screenshots at 100/125/150% UI scale.
+3. Defensive DOM adapter: quick disable/enable, cleanup on extension reload, instrumentation, no mutations to Vue scene state, no Editor app.asar patches.
 
-## M6 — Release readiness (P0)
-Check 3.8.2 and 3.8.8 compatibility, Windows and other supported platforms, 1k/5k hierarchy performance, memory/reload, security and asset permissions. Keep deploy ZIP compact with only manifest, compiled JS, assets and required README. Publish tag and GitHub Release **only** on explicit “chốt”.
+**Exit:** no readonly errors, correct active state after Undo/Redo, guides visually match hook, no uncontrolled DOM duplication or edits to unrelated nodes.
 
-## Architecture
-`src/core/`: pure model/validation; `src/renderer/scene-commands.ts`: Scene mutation boundary; `src/renderer/guides.ts`: pure guide geometry; `src/renderer/renderer.ts`: private DOM/Vue visual adapter; `src/main.ts`: main Editor composition root / injection; `static/icons/`: vector resources; `tests/`: automated regressions. No direct Vue writes or modification to `app.asar`.
+### M2 — Unity row appearance parity (P0/P1)
 
-**Limitations:** Unity SceneView/Default Parent/etc. may lack exact Cocos IPC equivalents. Guard unverified APIs rather than simulate an unsafe mutation. CI tests do not establish behavior in a live Creator Editor.
+- Color palette 1 gray + 8 hues; true theme-aware tint gradients/brightness/saturation and recursive ancestry behavior.
+- Replace default row icon in place (native icon slot rather than right-side badge) with context-aware prefab/lock/scene-state indicators; support bundled SVG + project-selected custom images, preserve native hit areas.
+- Active-state checkbox, lock hints, zebra striping / minimal mode + selectable density; intentionally no component minimap (removed per request).
+- Palette UI at row and keyboard; undoable changes where scene-backed. Avoid repeated full scans for large trees.
+
+**Exit:** paired screenshots of Unity and Cocos for the same hierarchy shape; no clipping at narrow dock widths, icon & color inheritance consistent across reload.
+
+### M3 — Navigation bar, bookmarks and Scene selector (P1)
+
+- Match `VHierarchyNavbar.cs` navigation / bookmark layout: pin/unpin, quick jump, reorder, rename, lost/deleted references, and per-project persistence.
+- Match `VHierarchySceneSelectorWindow.cs`: filter, keyboard arrows/Enter/Escape, recently opened and pinned scenes, clear unsaved changes confirmation.
+- Handle UUIDs per Scene/Prefab and avoid selecting stale nodes in another scene.
+
+**Exit:** bookmarks survive reload, deleted objects handled gracefully, switching scenes never silently loses unsaved work.
+
+### M4 — Keyboard and Scene workflow parity (P1)
+
+- `E` expand/collapse, `Shift+E` isolate, `Ctrl/Cmd+Shift+E` collapse all; virtualized tree safe.
+- `A` toggle active (multi-selection matches Unity when hovered node is selected), `X` delete with Undo/Redo; `F` frame in Scene view using a verified Editor command (selection is not sufficient); `D` assign default parent and `Shift+D` reset only if compatible Creator APIs exist; otherwise implement an extension-scoped equivalent with explicit limitations.
+- Configurable shortcuts and conflict detection. No interception while renaming/typing in an input field.
+
+**Exit:** each hotkey has targeted IPC regression tests and GUI validation; commands are undoable where supported and never silently invoke destructive operations.
+
+### M5 — Unity component workflow and advanced palette (P1/P2)
+
+- Optional future component detail popup via Inspector, if requested; minimap is intentionally not displayed. Pin / follow selection / close / reposition; use native Inspector APIs instead of fake component dumps.
+- Palette editor: reorder rows, enable/disable icon rows, color slots/gradients, custom icon assets, import/export mapping.
+- Prefab and multi-scene handling, selection persistence, undo, collaborative team settings. `VHierarchyDataComponent.cs` team-mode concept adapted to Cocos metadata or project-file strategy, without injecting runtime scripts into games.
+
+**Exit:** popup and palette behave correctly for multiple component types and remain isolated from project runtime builds.
+
+### M6 — Release gate (P0 hardening)
+
+- Compatibility check at least on 3.8.2 and 3.8.8; tests on Windows and ideally macOS where available.
+- Memory/timing profiling on 1k/5k+ node scenes, UI reload/docking, asset import, Scene/Prefab editing, error handling.
+- Full documentation, migration/backups, asset licensing audit, clean production ZIP only containing manifest, JS, static assets and necessary docs.
+- Merge or commit reviewed final code to `main` as usual. **Only after explicit “chốt”** create tag and GitHub Release.
+
+## Architecture / safeguards
+
+`src/core/` pure domain and validated persisted data; `src/renderer/scene-commands.ts` Scene IPC boundary; `src/renderer/guides.ts` deterministic guide geometry; `src/renderer/renderer.ts` adapter to private native Hierarchy UI; `src/main.ts` extension composition root and asset serving. `static/icons/` contains original vector assets. Avoid direct Vue writes, avoid patching `app.asar`; use `Editor.Message` for scene mutations. Tests live in `tests/` and cover persistence, geometry, IPC state transitions, and renderer activation. Test ZIP excludes source, test utilities and PDF screenshots.
+
+## Known risks / decisions
+
+- Private Hierarchy DOM/Vue APIs may change between Creator versions: detection and graceful no-op are required.
+- Unity Editor built-in icons cannot be copied from the supplied archive because they are not included. The 12 packaged SVGs are **replacements**, not original Unity asset bytes.
+- Certain Unity functions have no direct Cocos counterpart (Unity default parent, SceneView frame, global multi-scene navigation): implement only with verified Cocos Editor equivalents, document any differences.
+- This code has automated test coverage but **has not been executed inside a real Cocos Creator 3.8.8 GUI in this environment**. The user’s installed Editor is the final integration gate.
+
+
+### Patch 4 (0.1.0): Layer badges and search safety
+
+- Node Layer badges are read-only, after native rename-input; layer metadata is not included in node names or searches.
+- `scene:query-node` results are cached with bounded concurrency and refreshed asynchronously.
+- Hide Layer badges for Scene roots, native searching, rename mode and narrow rows; preserve guide click targets and native controls.
+- Test switching Layer in Inspector, named custom Layer, searching names, Scene/Prefab, and deep indentation on Creator 3.8.8.

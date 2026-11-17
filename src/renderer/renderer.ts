@@ -4,13 +4,13 @@
  * Uses a reversible private DOM overlay because Cocos exposes no public per-row decorator.
  */
 (() => {
-  type Flag = 'navigationBar' | 'activationToggle' | 'hierarchyLines' | 'zebraStriping' | 'minimalMode' | 'sceneSelector' | 'keyboardShortcuts' | 'foldOnGuideClick';
+  type Flag = 'navigationBar' | 'activationToggle' | 'hierarchyLines' | 'zebraStriping' | 'minimalMode' | 'sceneSelector' | 'keyboardShortcuts' | 'foldOnGuideClick' | 'showNodeLayers';
   interface Opts extends Record<Flag, boolean> { enabled: boolean; guideMode: 'tree' | 'minimal'; colorSaturation: number; colorBrightness: number; }
   interface Appearance { color?: number; icon?: string; recursiveColor?: boolean; recursiveIcon?: boolean; }
   interface Bookmark { uuid: string; name: string; }
   interface State { options: Opts; appearances: Record<string, Appearance>; bookmarks: Bookmark[]; }
-  interface TreeDump { uuid?: string; name?: string; depth?: number; parent?: string; active?: boolean; locked?: boolean; readonly?: boolean; isScene?: boolean; components?: Array<{ type?: string; extends?: string[] }>; prefab?: { state?: number }; }
-  interface Item { guide?: { group: Item[]; index: number; result: VHierarchyGuides.Result }; row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; depth: number; padding: number; margin: number; anchor: number; searching: boolean; }
+  interface TreeDump { uuid?: string; name?: string; depth?: number; parent?: string; active?: boolean; locked?: boolean; readonly?: boolean; isScene?: boolean; components?: Array<{ type?: string; extends?: string[] }>; prefab?: { state?: number }; layer?: unknown; }
+  interface Item { guide?: { group: Item[]; index: number; result: VHierarchyGuides.Result }; row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; nameEl: HTMLElement | null; depth: number; padding: number; margin: number; anchor: number; searching: boolean; }
   interface Hook { refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; showSettings(): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
@@ -28,11 +28,12 @@
     ['zebraStriping', 'Zebra striping'], ['minimalMode', 'Minimal mode'],
     ['foldOnGuideClick', 'Click hierarchy lines to collapse parent'],
     ['sceneSelector', 'Scene selector (experimental)'], ['keyboardShortcuts', 'Keyboard shortcuts'],
+    ['showNodeLayers', 'Show node layer next to its name'],
   ];
   const DEFAULT: State = {
     options: { enabled:true, navigationBar:true, activationToggle:true, hierarchyLines:true,
       zebraStriping:true, minimalMode:false, sceneSelector:false, keyboardShortcuts:true, foldOnGuideClick:true,
-      guideMode:'tree', colorBrightness:1, colorSaturation:1 }, appearances:{}, bookmarks:[],
+      showNodeLayers:true, guideMode:'tree', colorBrightness:1, colorSaturation:1 }, appearances:{}, bookmarks:[],
   };
   const CSS = `
     .vh-toolbar { display:flex; align-items:center; gap:4px; height:27px; padding:0 6px; box-sizing:border-box; border-bottom:1px solid var(--color-default-border, #3d454c); background:var(--color-normal-fill, #292e35); color:var(--color-normal-contrast,#ced7df); overflow:hidden; font-size:11px; }
@@ -86,6 +87,22 @@
     .tree-node[is-active='false'] > .drag-item > .vh-active { opacity:1; }
     .vh-active[disabled] { opacity:.45; cursor:wait; }
     .tree-node[data-vh-active-control] > .drag-item > ui-rename-input.name { margin-right:22px; }
+    /* Layer metadata is a separate sibling; never append it to ui-rename-input or
+       modify the Vue node.name (both native and toolbar search use that name). */
+    .tree-node[data-vh-has-layer] > .drag-item > ui-rename-input.name {
+      flex:0 1 var(--vh-node-name-width, 80px) !important;
+      width:var(--vh-node-name-width, 80px) !important;
+      min-width:0; max-width:calc(100% - 75px);
+      overflow:hidden; text-overflow:ellipsis; padding-right:2px;
+    }
+    .vh-node-layer { display:inline-flex; flex:0 0 auto; align-items:center; min-width:0;
+      margin-left:5px; padding-left:6px; border-left:1px solid rgba(161,176,192,.4);
+      color:var(--color-normal-contrast, #a3b1bf); opacity:.68;
+      font:500 10px/15px Arial,sans-serif; white-space:nowrap; user-select:none;
+      pointer-events:none; max-width:115px; overflow:hidden; text-overflow:ellipsis;
+    }
+    .tree-node[is-selected='true'] .vh-node-layer {opacity:.84;}
+    .tree[searching] .vh-node-layer, .tree-node[state='rename'] .vh-node-layer {display:none !important;}
     .vh-layer { position:fixed; inset:0; z-index:100000; pointer-events:none; }
     .vh-pop { pointer-events:auto; position:fixed; z-index:100001; background:#252b32; color:#e4eaf2; border:1px solid #657080; border-radius:7px; box-shadow:0 10px 30px #0009; min-width:216px; max-width:330px; padding:11px; font:12px Arial,sans-serif; }
     .vh-pop { max-height: min(85vh, 640px); overflow:auto; }
@@ -108,6 +125,9 @@
   let timer: ReturnType<typeof setInterval> | null = null;
   let observer: MutationObserver | null = null;
   const treeObservers = new Map<HTMLElement, MutationObserver>();
+  const layerLookup = new VHierarchyLayers.Lookup(uuid => req('scene','query-node', uuid), () => schedule());
+  const textCanvas = document.createElement('canvas');
+  const textContext = textCanvas.getContext('2d');
   let lastHovered: Item | null = null;
   let searchText = '';
   let views: Item[] = [];
@@ -203,7 +223,7 @@
     const icon = children.find(child => visible(child) && (child.tagName.toLowerCase() === 'ui-icon' && !child.classList.contains('arrow') && !child.classList.contains('lock') && !child.classList.contains('edit') || child.tagName.toLowerCase() === 'ui-asset-image')) as HTMLElement | undefined;
     const label = children.find(child => visible(child) && child.matches('ui-rename-input.name,.name')) as HTMLElement | undefined;
     const anchor = icon ? Math.max(0, icon.offsetLeft - 1) : label ? Math.max(0, label.offsetLeft - 1) : Math.max(0, drag.clientWidth - 12);
-    return { row, drag, node, uuid, name, padding:px(computed.paddingLeft), margin:px(computed.marginLeft), anchor,
+    return { row, drag, node, uuid, name, nameEl: nameEl || null, padding:px(computed.paddingLeft), margin:px(computed.marginLeft), anchor,
       searching:!!row.closest('.tree[searching]'), depth:node?.depth ?? 0 };
   }
   function nearestAppearance(item: Item, ancestorIds: string[]): Appearance {
@@ -279,6 +299,41 @@
       }
     }
   }
+  /** Add a visual-only, non-interactive sibling of the native rename control.
+   * Search must continue to operate on `node.name`, not rendered metadata.
+   * The badge is hidden when native search/rename or a very narrow row is active.
+   */
+  function drawLayer(item: Item): void {
+    const old = item.drag.querySelector(':scope > .vh-node-layer') as HTMLElement | null;
+    const clear = (): void => {
+      old?.remove();
+      changeAttr(item.row, 'data-vh-has-layer');
+      item.row.style.removeProperty('--vh-node-name-width');
+    };
+    if (!state.options.enabled || !state.options.showNodeLayers || !item.uuid || !item.nameEl ||
+      item.searching || item.node?.isScene || item.row.getAttribute('state') === 'rename') { clear(); return; }
+    const label = layerLookup.get(item.uuid, item.node?.layer);
+    if (!label) { clear(); return; }
+
+    // Measure native name, not all row text. Leave space for a Layer badge and
+    // the Active checkbox, and let long names ellipsize instead of overlapping.
+    const font = getComputedStyle(item.nameEl).font || getComputedStyle(item.drag).font || '12px Arial';
+    if (textContext) textContext.font = font;
+    const naturalNameWidth = Math.ceil((textContext?.measureText(item.name).width ?? item.name.length * 7) + 12);
+    const layerWidth = Math.min(115, Math.ceil((textContext?.measureText(label).width ?? label.length * 7) + 16));
+    const rightControls = state.options.activationToggle ? 28 : 8;
+    const available = item.drag.clientWidth - item.nameEl.offsetLeft - rightControls;
+    if (available < layerWidth + 32) { clear(); return; }
+    const width = Math.max(32, Math.min(naturalNameWidth, available - layerWidth - 6));
+    guideProp(item.row, '--vh-node-name-width', `${width}px`);
+    changeAttr(item.row, 'data-vh-has-layer','true');
+    const badge = old || el('span', 'vh-node-layer');
+    badge.setAttribute('aria-hidden', 'true');
+    badge.title = ''; // metadata is non-interactive; no tooltips affect search input
+    if (badge.textContent !== label) badge.textContent = label;
+    if (badge.previousElementSibling !== item.nameEl) item.nameEl.insertAdjacentElement('afterend', badge);
+  }
+
   function drawItem(item: Item, index: number, ancestors: Item[]): void {
     const opts = state.options;
     const enabled = opts.enabled;
@@ -310,6 +365,7 @@
         || ensureControl(item, 'vh-icon', () => el('span','vh-icon vh-emoji'));
       if (marker.textContent !== displayIcon) marker.textContent = displayIcon;
     } else iconEl?.remove();
+    drawLayer(item);
     // Component minimap has been removed by product request; clean up remnants
     // from any previously injected renderer instance.
     item.drag.querySelector(':scope > .vh-components')?.remove();
@@ -393,7 +449,7 @@
       if (nativeChange) schedule();
     });
     watcher.observe(tree, { childList:true, subtree:true, attributes:true,
-      attributeFilter:['is-expand','is-parent','is-active','is-selected','is-animating','state'] });
+      attributeFilter:['is-expand','is-parent','is-active','is-selected','is-animating','state','searching'] });
     treeObservers.set(tree, watcher);
   }
   function pruneTreeObservers(): void {
@@ -607,7 +663,7 @@
   function applyState(input: State): void { if (!input?.options) return; state=input; schedule(); }
   function stats(): unknown { return { version:'0.1.0',scans,panelCount,visibleRows:views.length,vueRows,hasActiveNode:!!lastHovered?.uuid,lastError }; }
   function stop(): void {
-    stopped=true; if(timer)clearInterval(timer);observer?.disconnect();pop?.remove();
+    stopped=true; layerLookup.dispose(); if(timer)clearInterval(timer);observer?.disconnect();pop?.remove();
     for (const watcher of treeObservers.values()) watcher.disconnect();
     treeObservers.clear();
     for(const release of listeners) release(); listeners.length=0;
@@ -616,10 +672,11 @@
         tree.removeAttribute('data-vh-lock-gutter');
       for(const row of (r as Element).querySelectorAll?.('.tree-node')||[]){
         const h=row as HTMLElement;
-        for(const key of ['data-vh-tint','data-vh-stripe','data-vh-dim','data-vh-compact','data-vh-active-control'])h.removeAttribute(key);
+        for(const key of ['data-vh-tint','data-vh-stripe','data-vh-dim','data-vh-compact','data-vh-active-control','data-vh-has-layer'])h.removeAttribute(key);
         clearGuides(h);
         h.style.removeProperty('--vh-row-color');
-        for(const child of h.querySelectorAll(':scope > .drag-item > .vh-icon,:scope > .drag-item > .vh-components,:scope > .drag-item > .vh-active'))child.remove();
+        h.style.removeProperty('--vh-node-name-width');
+        for(const child of h.querySelectorAll(':scope > .drag-item > .vh-icon,:scope > .drag-item > .vh-components,:scope > .drag-item > .vh-active,:scope > .drag-item > .vh-node-layer'))child.remove();
       }
       for(const bar of (r as Element).querySelectorAll?.('.vh-toolbar')||[])bar.remove();
       for(const css of (r as Element).querySelectorAll?.('style[data-vh-style]')||[])css.remove();

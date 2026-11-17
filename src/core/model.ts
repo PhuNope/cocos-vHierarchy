@@ -20,6 +20,23 @@ export const PALETTE = ['#777d89', '#b35e68', '#b48e4f', '#a9a857', '#61a886', '
 export const ICONS = ['folder','camera','light','script','particle','physics','audio','material','prefab','canvas','settings','favorite'];
 /** Legacy 0.1.0 emojis continue to load in saved project settings. */
 export const LEGACY_ICONS = ['⭐', '📁', '📷', '💡', '🎵', '🎮', '🧩', '🎨', '⚙', '🔒', '🎬', '🖼'];
+/**
+ * Cocos Creator exposes 22-character compressed UUIDs for scene nodes. Unlike
+ * URL-safe base64, the Editor's compressed format may contain '+' and '/'.
+ * Earlier versions accepted only [\w-], so valid nodes were rejected by
+ * set-appearance and silently discarded when loading saved settings.
+ *
+ * Retain the original 16–128-character identifier allowance for existing
+ * project settings and bookmarks; add only the 22-character compressed form.
+ * The value is always used as a JSON object key, never interpolated into a
+ * filesystem path or selector.
+ */
+const LEGACY_NODE_ID = /^[A-Za-z0-9_-]{16,128}$/;
+const COCOS_COMPRESSED_NODE_ID = /^[A-Za-z0-9+/_-]{22}$/;
+export function isNodeId(value: unknown): value is string {
+  return typeof value === 'string' &&
+    (LEGACY_NODE_ID.test(value) || COCOS_COMPRESSED_NODE_ID.test(value));
+}
 export const DEFAULT_OPTIONS: Options = {
   enabled: true, navigationBar: true, activationToggle: true,
   hierarchyLines: true, zebraStriping: true, minimalMode: false, sceneSelector: false,
@@ -65,10 +82,10 @@ export function sanitizeState(input: unknown): State {
   if (typeof opt.colorBrightness === 'number' && Number.isFinite(opt.colorBrightness)) options.colorBrightness = clamp(opt.colorBrightness, 0, 2);
   const appearances: Record<string, Appearance> = Object.create(null);
   if (raw.appearances && typeof raw.appearances === 'object') for (const [id, value] of Object.entries(raw.appearances as Record<string, unknown>)) {
-    if (/^[\w-]{16,128}$/.test(id)) appearances[id] = sanitizeAppearance(value);
+    if (isNodeId(id)) appearances[id] = sanitizeAppearance(value);
   }
   const bookmarks = Array.isArray(raw.bookmarks) ? raw.bookmarks.filter((v): v is Bookmark =>
-    !!v && typeof v === 'object' && typeof v.uuid === 'string' && /^[\w-]{16,128}$/.test(v.uuid) && typeof v.name === 'string'
+    !!v && typeof v === 'object' && isNodeId(v.uuid) && typeof v.name === 'string'
   ).slice(0, 32).map(({uuid, name}) => ({uuid, name: name.slice(0, 80)})) : [];
   return { options, appearances, bookmarks };
 }

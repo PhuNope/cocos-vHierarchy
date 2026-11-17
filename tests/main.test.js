@@ -43,13 +43,27 @@ test('can load, apply settings and persist without changing scene files',async()
   assert.deepEqual(main.methods.getState().appearances[paletteUuid],
     {color:2,icon:'camera',recursiveColor:true,recursiveIcon:true});
   assert.equal(await main.methods.setAppearance(paletteUuid,{color:4,icon:'📁'}),true);
+  // Cocos Editor exposes compressed 22-char node UUIDs containing '+' and '/'.
+  // Patch 12 rejected these identifiers even when {color} was otherwise valid.
+  const compressedUuid='abCDefghij+klmn/opqrst';
+  assert.equal(compressedUuid.length,22);
+  assert.equal(await main.methods.setAppearance(compressedUuid,{color:3}),true);
+  assert.equal(await main.methods.setAppearance(compressedUuid,{color:3,icon:'camera'}),true);
+  assert.equal(await main.methods.setAppearance(compressedUuid,{icon:'camera',color:0,recursiveColor:true}),true);
+  assert.equal(main.methods.getState().appearances[compressedUuid].color,0);
+  assert.equal(await main.methods.toggleBookmark(compressedUuid,'Compressed node'),true);
+
 
   assert.equal(await main.methods.toggleBookmark('b204319a-288c-484a-8f60-287573a05ab6','Example'),true);
   assert.equal(main.methods.getState().options.zebraStriping,false);
   const filename=path.join(project,'settings','vHierarchy.json');
   const saved=JSON.parse(fs.readFileSync(filename,'utf8'));
   assert.equal(saved.appearances['b204319a-288c-484a-8f60-287573a05ab6'].color,4);
-  assert.equal(saved.bookmarks.length,1);
+  assert.deepEqual(saved.appearances[compressedUuid],{color:0,icon:'camera',recursiveColor:true});
+  assert.deepEqual(require('../dist/core/model.js').sanitizeState(saved).appearances[compressedUuid], saved.appearances[compressedUuid]);
+  assert.equal(saved.bookmarks.some(x=>x.uuid===compressedUuid),true);
+
+  assert.equal(saved.bookmarks.length,2);
   assert.equal(saved.options.colorGradientsEnabled,false);
   assert.equal(saved.options.colorSaturation,.6);
   assert.equal(saved.options.colorBrightness,1.1);
@@ -95,5 +109,18 @@ test('native scene:change-node broadcasts refresh affected Layer without a TTL w
   const refresh=executed.filter(js=>js.includes('sceneNodeChanged?.('));
   assert.equal(refresh.length,1);
   assert.match(refresh[0],/sceneNodeChanged\?\.\(null\)/);
+  await main.unload();
+});
+
+test('Cocos node changes with compressed UUIDs invalidate the right Layer label',async()=>{
+  const compressed='abCDefghij+klmn/opqrst';
+  main.load();
+  await new Promise(resolve=>setTimeout(resolve,25));
+  executed.length=0;
+  main.methods.nodeChanged({uuid:compressed,property:'layer'});
+  await new Promise(resolve=>setTimeout(resolve,60));
+  const refresh=executed.filter(js=>js.includes('sceneNodeChanged?.('));
+  assert.equal(refresh.length,1);
+  assert.ok(refresh[0].includes(compressed));
   await main.unload();
 });

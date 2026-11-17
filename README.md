@@ -156,3 +156,9 @@ not emitted by a future Editor build.
 - Color calculation adapts to Editor light/dark theme, and recursively inherited parent colors are intentionally softer than direct assignments. Native selection highlight is composited *above* the color tint; native Layer labels, right-side component indicators, Lock, checkbox and text ellipsis are unchanged.
 - Per-scan color output is computed only for 9×2 palette states, not once per node. The palette color UI matches the same saturation/brightness calculations. Existing settings are migrated with safe defaults; no Scene data is changed by cosmetic color settings.
 - Actual styling remains an approximation of Unity's row gradients, not pixel-perfect Unity parity. Please test changing theme, disabling gradients, selecting colored nodes, and color inheritance (root → child → overridden grandchild) inside Cocos Creator 3.8.8 before declaring M2 complete.
+
+## Patch 13 (0.1.0): Compressed node UUID fix
+
+- Cocos Creator Hierarchy node UUIDs may use the 22-character compressed base64 form, including `+` and `/`. Patch 12's `[\w-]` guard rejected these valid IDs, causing **Appearance rejected by extension** even for a valid `{color}` change.
+- Centralized the node ID guard and reused it for Palette assignments, persisted settings, bookmarks, and Scene node change notifications. Existing hyphenated UUID and earlier project entries remain supported; suspicious IDs/path fragments are still rejected.
+- Color/icon/recursive metadata remains stored in `settings/vHierarchy.json` and does not change serialized Scene data. Test by assigning a color and icon, restarting Creator, and confirming they persist. Check the Console for `set-appearance: unsupported node ID format` if a future Editor changes its identifier encoding.

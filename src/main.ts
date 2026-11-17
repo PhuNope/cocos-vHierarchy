@@ -7,7 +7,7 @@ declare function setInterval(handler: () => void, timeout: number): unknown;
 declare function clearInterval(handle: unknown): void;
 declare function setTimeout(handler: () => void, timeout: number): unknown;
 declare function clearTimeout(handle: unknown): void;
-import { State, Options, Appearance, Feature, FEATURES, sanitizeState, sanitizeAppearance, isValidAppearance } from './core/model';
+import { State, Options, Appearance, Feature, FEATURES, sanitizeState, sanitizeAppearance, isValidAppearance, isNodeId } from './core/model';
 
 const fs = require('fs');
 const path = require('path');
@@ -136,7 +136,7 @@ class EditorHierarchyHost {
     const traverse = (value: unknown, depth: number): void => {
       if (depth > 3 || ids.size >= 128) return;
       if (typeof value === 'string') {
-        if (/^[\w-]{16,128}$/.test(value) && /[0-9]/.test(value)) ids.add(value);
+        if (isNodeId(value)) ids.add(value);
       } else if (Array.isArray(value)) {
         for (const child of value.slice(0, 128)) traverse(child, depth + 1);
       } else if (value && typeof value === 'object') {
@@ -172,7 +172,8 @@ class EditorHierarchyHost {
     return true;
   }
   async setAppearance(uuid: string, input: Appearance): Promise<boolean> {
-    if (!/^[\w-]{16,128}$/.test(uuid) || !isValidAppearance(input)) return false;
+    if (!isNodeId(uuid)) { console.warn('[vHierarchy] set-appearance: unsupported node ID format', { length: String(uuid ?? '').length }); return false; }
+    if (!isValidAppearance(input)) { console.warn('[vHierarchy] set-appearance: invalid appearance fields', Object.keys(input ?? {})); return false; }
     const next = sanitizeAppearance(input);
     // Stage a new state first: a failed disk write must not leave the in-memory
     // appearance changed while the project settings file remains unchanged.
@@ -186,7 +187,7 @@ class EditorHierarchyHost {
     return true;
   }
   async toggleBookmark(uuid: string, name: string): Promise<boolean> {
-    if (!/^[\w-]{16,128}$/.test(uuid) || typeof name !== 'string') return false;
+    if (!isNodeId(uuid) || typeof name !== 'string') return false;
     const exists = this.state.bookmarks.some(x => x.uuid === uuid);
     this.state.bookmarks = exists ? this.state.bookmarks.filter(x => x.uuid !== uuid) : [...this.state.bookmarks, { uuid, name: name.slice(0, 80) }].slice(-32);
     this.repo.save(this.state);

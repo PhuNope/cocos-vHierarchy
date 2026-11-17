@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {PALETTE,ICONS,sanitizeState,sanitizeAppearance,isValidAppearance,resolveAppearance} = require('../dist/core/model.js');
+const {PALETTE,ICONS,sanitizeState,sanitizeAppearance,isValidAppearance,isNodeId,resolveAppearance} = require('../dist/core/model.js');
 const id = 'd18cf1fe-3d67-4b3b-9b2a-fd0487a71421';
 const child = 'c81231fe-3d67-4b3b-9b2a-fd0487a71422';
 test('sensible defaults and data table from Unity',()=>{
@@ -47,6 +47,7 @@ test('gradient option defaults true and migrates old project settings safely',()
   assert.equal(sanitizeState({options:{colorGradientsEnabled:'false'}}).options.colorGradientsEnabled,true);
 });
 
+
 test('valid appearance is independent of property insertion order',()=>{
   const first={icon:'folder',color:3,recursiveIcon:true,recursiveColor:false};
   const second={color:3,recursiveColor:false,icon:'folder',recursiveIcon:true};
@@ -65,4 +66,20 @@ test('appearance still rejects unknown fields or invalid types',()=>{
   assert.equal(isValidAppearance({recursiveColor:'true'}),false);
   assert.equal(isValidAppearance([]),false);
   assert.equal(isValidAppearance(null),false);
+});
+
+// Native Cocos compressed node UUIDs are base64 (not only base64url).
+// A 22-character ID with '+' or '/' is a real-world regression from Patch 12.
+test('Cocos compressed 22-character node UUIDs are accepted and persisted',()=>{
+  const compressed='abCDefghij+klmn/opqrst';
+  assert.equal(compressed.length,22);
+  assert.equal(isNodeId(compressed),true);
+  assert.equal(isNodeId('abCDefghij-klmn_opqrst'),true);
+  assert.equal(isNodeId(id),true);
+  const state=sanitizeState({appearances:{[compressed]:{color:0,icon:'folder',recursiveColor:true}},bookmarks:[{uuid:compressed,name:'Test /'}]});
+  assert.deepEqual(state.appearances[compressed],{color:0,icon:'folder',recursiveColor:true});
+  assert.deepEqual(state.bookmarks,[{uuid:compressed,name:'Test /'}]);
+  assert.equal(isNodeId('../../../../../evil'),false);
+  assert.equal(isNodeId('abc+def'),false);
+  assert.equal(isNodeId('foo/bar'.repeat(4)),false);
 });

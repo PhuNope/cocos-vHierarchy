@@ -10,15 +10,18 @@
   interface Bookmark { uuid: string; name: string; }
   interface State { options: Opts; appearances: Record<string, Appearance>; bookmarks: Bookmark[]; }
   interface TreeDump { uuid?: string; name?: string; depth?: number; parent?: string; active?: boolean; locked?: boolean; readonly?: boolean; isScene?: boolean; components?: Array<{ type?: string; extends?: string[] }>; prefab?: { state?: number }; }
-  interface Item { row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; depth: number; offset: number; components: string[]; }
-  interface Hook { refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; showSettings(): void; }
+  interface Item { row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; depth: number; padding: number; margin: number; anchor: number; searching: boolean; components: string[]; }
+  interface Hook { refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; showSettings(): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) { w.__vHierarchy388.refresh(); return { status: 'running', reused: true }; }
 
   const PALETTE = ['#777d89', '#b35e68', '#b48e4f', '#a9a857', '#61a886', '#5d94b5', '#737cc2', '#a36bb4', '#b56e9d'];
-  const ICONS = ['⭐', '📁', '📷', '💡', '🎵', '🎮', '🧩', '🎨', '⚙', '🔒', '🎬', '🖼'];
+  const ICONS = ['folder','camera','light','script','particle','physics','audio','material','prefab','canvas','settings','favorite'];
+  const GUIDE_PROPS = ['--vh-guide-images', '--vh-guide-positions', '--vh-guide-sizes', '--vh-guide-width',
+    '--vh-guide-left', '--vh-guide-elbow-left', '--vh-guide-elbow-width'];
+  const GUIDE_COLOR = 'rgba(151,166,187,.42)';
   const OPTIONS: Array<[Flag, string]> = [
     ['navigationBar', 'Navigation bar / Bookmarks'], ['componentMinimap', 'Component minimap'],
     ['activationToggle', 'Active quick toggle'], ['hierarchyLines', 'Hierarchy lines'],
@@ -44,10 +47,30 @@
     .tree-node[data-vh-dim="true"] > .drag-item { opacity:.24; }
     .tree-node[data-vh-compact="true"] { line-height:18px; }
     .tree-node[data-vh-compact="true"] > .drag-item { height:18px; }
-    .vh-guides { position:absolute; top:0; left:0; bottom:0; z-index:0; pointer-events:none; }
-    .vh-rail { position:absolute; border-left:1px solid rgba(151,166,187,.43); height:100%; pointer-events:none; }
-    .vh-elbow { position:absolute; top:0; height:50%; border-left:1px solid rgba(151,166,187,.54); border-bottom:1px solid rgba(151,166,187,.54); border-bottom-left-radius:3px; pointer-events:none; }
-    .vh-icon { position:absolute; right:92px; top:1px; z-index:1; font-size:12px; line-height:17px; pointer-events:none; }
+    /* Draw on native ui-drag-item gutter, matching the tested v0.8.8 hook.
+       No extra absolutely-positioned guide nodes or native arrow displacement. */
+    .tree-node[data-vh-guide] > ui-drag-item.drag-item::before {
+      content:''; position:absolute; left:var(--vh-guide-left,0px); top:0; bottom:0;
+      width:var(--vh-guide-width,0px);
+      background-image:var(--vh-guide-images,none);
+      background-position:var(--vh-guide-positions,0px top);
+      background-size:var(--vh-guide-sizes,0px 0px); background-repeat:no-repeat;
+      opacity:.82; pointer-events:none; user-select:none; z-index:0;
+    }
+    .tree-node[data-vh-elbow] > ui-drag-item.drag-item::after {
+      content:''; position:absolute; left:var(--vh-guide-elbow-left,0px); top:0;
+      width:var(--vh-guide-elbow-width,0px); height:50%; box-sizing:border-box;
+      border-left:1px solid rgba(151,166,187,.42);
+      border-bottom:1px solid rgba(151,166,187,.42);
+      border-bottom-left-radius:4px; opacity:.82; pointer-events:none; user-select:none; z-index:0;
+    }
+    .tree-node:hover > ui-drag-item.drag-item::before,
+    .tree-node:hover > ui-drag-item.drag-item::after,
+    .tree-node[is-selected='true'] > ui-drag-item.drag-item::before,
+    .tree-node[is-selected='true'] > ui-drag-item.drag-item::after {opacity:1}
+    .vh-icon { position:absolute; right:92px; top:2px; z-index:1; width:15px; height:15px; pointer-events:none; object-fit:contain; }
+    .vh-emoji { width:auto; font-size:12px; line-height:15px; }
+
     .vh-components { position:absolute; right:47px; top:0; height:100%; display:flex; align-items:center; gap:2px; z-index:1; pointer-events:auto; max-width:45px; overflow:hidden; }
     .vh-dot { width:5px; height:8px; border-radius:2px; display:block; flex:none; opacity:.8; }
     .vh-active { position:absolute; right:25px; top:1px; width:17px; height:17px; z-index:2; display:none; color:#a2d4aa; border:none; border-radius:3px; background:transparent; cursor:pointer; font-size:13px; line-height:16px; padding:0; }
@@ -62,12 +85,15 @@
     .vh-grid { display:grid; grid-template-columns:repeat(9, 1fr); gap:4px; margin:7px 0; }
     .vh-colors { display:grid; grid-template-columns:repeat(9, 1fr); gap:5px; margin:7px 0; }
     .vh-swatch { width:19px; height:19px; border:1px solid #e1e7e966; border-radius:4px; padding:0; cursor:pointer; }
-    .vh-symbol { font-size:15px; width:23px; height:23px; background:#48515c; border:1px solid #ffffff21; border-radius:4px; cursor:pointer; padding:0; }
+    .vh-symbol { width:24px; height:24px; background:#48515c; border:1px solid #ffffff21; border-radius:4px; cursor:pointer; padding:3px; display:flex; align-items:center; justify-content:center; }
+    .vh-symbol img { width:16px; height:16px; object-fit:contain; pointer-events:none; }
+    .vh-active[disabled] { opacity:.4; cursor:wait; display:block; }
     .vh-footer { font-size:10px; color:#a8b4c1; margin-top:8px; }
     .vh-pop button { color:inherit; }
   `;
 
   let state = DEFAULT;
+  let iconAssets: Record<string, string> = {};
   let stopped = false;
   let queued = false;
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -155,9 +181,21 @@
     const nameEl = row.querySelector(':scope > .drag-item > ui-rename-input') as any;
     const name = node?.name || String(nameEl?.value ?? nameEl?.getAttribute('value') ?? '');
     const uuid = typeof node?.uuid === 'string' ? node.uuid : '';
-    const offset = Number.parseFloat(getComputedStyle(drag).paddingLeft) || 0;
+    const computed = getComputedStyle(drag);
+    const px = (input: string): number => {const n = Number.parseFloat(input); return Number.isFinite(n) && n >= 0 ? n : 0;};
+    // Match the native template: arrow, icon and input are direct children.
+    const visible = (target: Element): boolean => {
+      const computed = getComputedStyle(target);
+      const rect = target.getBoundingClientRect();
+      return computed.display !== 'none' && computed.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+    };
+    const children = [...drag.children];
+    const icon = children.find(child => visible(child) && (child.tagName.toLowerCase() === 'ui-icon' && !child.classList.contains('arrow') && !child.classList.contains('lock') && !child.classList.contains('edit') || child.tagName.toLowerCase() === 'ui-asset-image')) as HTMLElement | undefined;
+    const label = children.find(child => visible(child) && child.matches('ui-rename-input.name,.name')) as HTMLElement | undefined;
+    const anchor = icon ? Math.max(0, icon.offsetLeft - 1) : label ? Math.max(0, label.offsetLeft - 1) : Math.max(0, drag.clientWidth - 12);
     const components = (node?.components || []).map(c => c.type || '').filter(Boolean);
-    return { row, drag, node, uuid, name, offset, components, depth: node?.depth ?? 0 };
+    return { row, drag, node, uuid, name, padding:px(computed.paddingLeft), margin:px(computed.marginLeft), anchor,
+      searching:!!row.closest('.tree[searching]'), components, depth:node?.depth ?? 0 };
   }
   function nearestAppearance(item: Item, ancestorIds: string[]): Appearance {
     const a = state.appearances[item.uuid] || {};
@@ -187,26 +225,59 @@
     if (prior) return prior;
     const element = create(); item.drag.appendChild(element); return element;
   }
-  function putGuides(item: Item, ancestors: Item[], continuation: boolean[], indentStep: number): void {
-    const old = item.drag.querySelector(':scope > .vh-guides');
-    if (!state.options.hierarchyLines || item.depth <= 0 || item.depth > 24 || ancestors.length < item.depth) { old?.remove(); return; }
-    const guides = ensureControl(item, 'vh-guides', () => el('div', 'vh-guides'));
-    // Do not draw into the native arrow / native icon; width stays in the gutter.
-    const width = Math.max(0, item.offset - 4);
-    guides.style.width = `${width}px`;
-    const pieces: string[] = [];
-    const start = Math.max(0, item.offset - item.depth * indentStep);
-    for (let i = 0; i < ancestors.length; i++) if (continuation[i]) {
-      pieces.push(`<span class="vh-rail" style="left:${Math.max(0,start+(i+1)*indentStep-8)}px"></span>`);
-    }
-    const x = Math.max(0, start + item.depth * indentStep - 8);
-    if (state.options.guideMode === 'tree') {
-      pieces.push(`<span class="vh-elbow" style="left:${x}px;width:${Math.min(13,Math.max(5,width-x-1))}px"></span>`);
-      if (continuation[item.depth]) pieces.push(`<span class="vh-rail" style="left:${x}px;top:50%;height:50%"></span>`);
-    } else pieces.push(`<span class="vh-rail" style="left:${x}px;opacity:.65"></span>`);
-    const html = pieces.join(''); if (guides.innerHTML !== html) guides.innerHTML = html;
+  function clearGuides(row: HTMLElement): void {
+    changeAttr(row, 'data-vh-guide');changeAttr(row, 'data-vh-elbow');
+    for (const key of GUIDE_PROPS) row.style.removeProperty(key);
   }
-  function drawItem(item: Item, index: number, ancestors: Item[], nextSibling: boolean[], step: number): void {
+  function guideProp(row: HTMLElement, key: string, value: string): void {
+    if (row.style.getPropertyValue(key) !== value) row.style.setProperty(key, value);
+  }
+  /** Geometry is measured from native drag item styles, not an estimated padding step. */
+  function updateGuides(items: Item[]): void {
+    if (!state.options.enabled || !state.options.hierarchyLines || items.some(x => x.searching)) {
+      items.forEach(x => clearGuides(x.row)); return;
+    }
+    const result = VHierarchyGuides.calculate(items.map(item => ({
+      padding:item.padding, margin:item.margin, anchor:item.anchor, searching:item.searching,
+      reportedDepth: Number.isInteger(item.node?.depth) ? item.node!.depth : null,
+    })));
+    for (let i = 0; i < items.length; i++) {
+      const {row} = items[i]; const entry = result.nodes[i];
+      if (!entry.valid || entry.depth < 1 || entry.depth > 32) { clearGuides(row); continue; }
+      const {base, step, mode} = result.layout;
+      const rails = state.options.guideMode === 'minimal'
+        ? [...entry.rails.filter(r => r.shape !== 'lower'), {level:entry.depth, shape:entry.hasNextSibling ? 'full' : 'last'} as VHierarchyGuides.Rail]
+        : entry.rails;
+      const paint: Array<{image:string;position:string;size:string}> = [];
+      for (const rail of rails) {
+        const x = base + (rail.level - 0.5) * step;
+        if (!(x > 1 && x < entry.indent - 1)) continue;
+        paint.push({
+          image: rail.shape === 'last'
+            ? `linear-gradient(to bottom, ${GUIDE_COLOR} 0%, ${GUIDE_COLOR} 78%, transparent 100%)`
+            : `linear-gradient(${GUIDE_COLOR},${GUIDE_COLOR})`,
+          position: `${x}px ${rail.shape === 'lower' ? 'bottom' : 'top'}`,
+          size:`1px ${rail.shape === 'full' ? '100%' : '50%'}`,
+        });
+      }
+      guideProp(row,'--vh-guide-left',`${entry.offset}px`);
+      guideProp(row,'--vh-guide-width',`${entry.indent}px`);
+      guideProp(row,'--vh-guide-images',paint.length ? paint.map(p=>p.image).join(', ') : 'none');
+      guideProp(row,'--vh-guide-positions',paint.length ? paint.map(p=>p.position).join(', ') : '0px top');
+      guideProp(row,'--vh-guide-sizes',paint.length ? paint.map(p=>p.size).join(', ') : '0px 0px');
+      changeAttr(row,'data-vh-guide',paint.length ? 'true' : undefined);
+      if (state.options.guideMode === 'tree' && entry.elbowX > 1 && entry.elbowWidth >= 5) {
+        guideProp(row,'--vh-guide-elbow-left',`${entry.offset+entry.elbowX}px`);
+        guideProp(row,'--vh-guide-elbow-width',`${entry.elbowWidth}px`);
+        changeAttr(row,'data-vh-elbow','true');
+      } else {
+        changeAttr(row,'data-vh-elbow');
+        row.style.removeProperty('--vh-guide-elbow-left');
+        row.style.removeProperty('--vh-guide-elbow-width');
+      }
+    }
+  }
+  function drawItem(item: Item, index: number, ancestors: Item[]): void {
     const opts = state.options;
     const enabled = opts.enabled;
     changeAttr(item.row, 'data-vh-stripe', enabled && opts.zebraStriping ? String(index % 2) : undefined);
@@ -225,8 +296,16 @@
     }
     const iconEl = item.drag.querySelector(':scope > .vh-icon') as HTMLElement | null;
     const displayIcon = enabled && inherited.icon ? inherited.icon : '';
-    if (displayIcon) {
-      const marker = iconEl || ensureControl(item, 'vh-icon', () => el('span','vh-icon'));
+    if (displayIcon && iconAssets[displayIcon]) {
+      if (iconEl && iconEl.tagName !== 'IMG') iconEl.remove();
+      const marker = (item.drag.querySelector(':scope > img.vh-icon') as HTMLImageElement | null)
+        || ensureControl(item, 'vh-icon', () => el('img','vh-icon')) as HTMLImageElement;
+      if (marker.src !== iconAssets[displayIcon]) marker.src = iconAssets[displayIcon];
+      marker.title = displayIcon;
+    } else if (displayIcon) {
+      if (iconEl && iconEl.tagName !== 'SPAN') iconEl.remove();
+      const marker = (item.drag.querySelector(':scope > span.vh-icon') as HTMLElement | null)
+        || ensureControl(item, 'vh-icon', () => el('span','vh-icon vh-emoji'));
       if (marker.textContent !== displayIcon) marker.textContent = displayIcon;
     } else iconEl?.remove();
     const dots = item.drag.querySelector(':scope > .vh-components') as HTMLElement | null;
@@ -241,9 +320,8 @@
     if (enabled && opts.activationToggle && item.uuid && !item.node?.isScene && !item.node?.readonly) {
       const target = activeButton || ensureControl(item, 'vh-active', () => btn('◉', 'Toggle node active (A)', () => { void toggleActive(item); }, 'vh-active')) as HTMLButtonElement;
       target.textContent = item.node?.active === false ? '○' : '◉';
+      target.disabled = VHierarchySceneCommands.isPending(item.uuid);
     } else activeButton?.remove();
-    if (enabled) putGuides(item, ancestors, nextSibling, step);
-    else item.drag.querySelector(':scope > .vh-guides')?.remove();
   }
   function findToolbar(container: HTMLElement): HTMLElement {
     let bar = container.querySelector(':scope > .vh-toolbar') as HTMLElement | null;
@@ -306,34 +384,18 @@
           const rows = [...tree.querySelectorAll(':scope > .tree-node')] as HTMLElement[];
           if (!rows.length) continue;
           const group = rows.map(readItem).filter((x): x is Item => !!x);
-          const pad = [...new Set(group.map(i => i.offset))].sort((a,b) => a-b);
-          const deltas = pad.slice(1).map((v,i) => v-pad[i]).filter(x => x>=8 && x<=40);
-          const step = deltas[0] || 20, base = pad[0] || 0;
-          // Flattened depth-first tree: derive actual ancestor/sibling continuation.
-          const stack: Item[] = [];
-          const continuations: boolean[][] = [];
-          for (let i=0;i<group.length;i++) {
-            const item=group[i];
-            item.depth = item.node?.depth ?? Math.max(0,Math.round((item.offset-base)/step));
-            item.depth = Math.min(32,Math.max(0,item.depth));
-            const level = item.depth;
-            stack.length = Math.min(stack.length, level);
-            const parentIds=stack.slice();
-            if (level === 0) stack.length=0;
-            continuations[i] = [];
-            for (let ancestor=0;ancestor<=level;ancestor++) {
-              let hasNext=false;
-              for(let j=i+1;j<group.length;j++) {
-                const d=group[j].node?.depth ?? Math.max(0,Math.round((group[j].offset-base)/step));
-                if(d < ancestor)break;
-                if(d === ancestor){hasNext=true;break;}
-              }
-              continuations[i][ancestor]=hasNext;
-            }
-            views.push(item);
-            drawItem(item,i,parentIds,continuations[i],step);
-            stack[level] = item;
+          // Compute inheritance from the visible flat native tree.
+          const geometry = VHierarchyGuides.calculate(group.map(i=>({padding:i.padding,margin:i.margin,anchor:i.anchor,
+            reportedDepth:Number.isInteger(i.node?.depth)?i.node!.depth:null,searching:i.searching})));
+          const stack: Item[]=[];
+          for (let i = 0; i < group.length; i++) {
+            const item=group[i]; item.depth=geometry.nodes[i].depth;
+            if (!geometry.nodes[i].valid) { stack.length=0; drawItem(item,i,[]); views.push(item); continue; }
+            stack.length=Math.min(stack.length,item.depth);
+            drawItem(item,i,stack.slice());
+            views.push(item); stack[item.depth]=item;
           }
+          updateGuides(group);
           listen(rootHost);
         }
       }
@@ -388,14 +450,10 @@
   async function toggleActive(item: Item): Promise<void> {
     if (!item.uuid || item.node?.locked || item.node?.readonly || item.node?.isScene) return;
     try {
-      const dump = await req('scene','query-node',item.uuid);
-      const active = dump?.active;
-      if (typeof active?.value !== 'boolean') throw new Error('Scene did not return editable active property');
-      const outcome = await req('scene','set-property', {uuid:item.uuid,path:'active',dump:{...active,value:!active.value},record:true});
-      if(outcome!==true) throw new Error('Editor rejected node active change');
-      item.node!.active=!active.value;
-      schedule();
+      await VHierarchySceneCommands.toggleActive(item.uuid, req);
+      // Vue owns item.node. Never assign to its readonly `active` property.
     } catch(e) { logError('toggle-active',e); }
+    finally { schedule(); }
   }
   async function persistAppearance(item: Item, next: Appearance): Promise<void> {
     if(!item.uuid) return;
@@ -425,7 +483,9 @@
     recursive.append(check,document.createTextNode('Apply color to descendants'));wrap.append(recursive);
     wrap.append(el('span','','Icon'));
     const icons=el('div','vh-grid');
-    ICONS.forEach(symbol=>icons.append(btn(symbol,'Icon '+symbol,()=>{current.icon=symbol;void persistAppearance(item,{...current});},'vh-symbol')));
+    ICONS.forEach(symbol=>{ const b=btn('', 'Icon '+symbol,()=>{current.icon=symbol;void persistAppearance(item,{...current});},'vh-symbol');
+      const url=iconAssets[symbol];if(url){const im=el('img');im.src=url;im.alt=symbol;b.append(im);} else b.textContent=symbol;
+      icons.append(b); });
     wrap.append(icons,btn('Clear icon','Remove icon',()=>{delete current.icon;current.recursiveIcon=false;void persistAppearance(item,{...current});}));
     const recursiveIcon=el('label');const iconCheck=el('input') as HTMLInputElement;iconCheck.type='checkbox';iconCheck.checked=!!current.recursiveIcon;
     iconCheck.addEventListener('change',()=>{current.recursiveIcon=iconCheck.checked;void persistAppearance(item,{...current});});
@@ -465,6 +525,7 @@
     } catch(e){wrap.append(el('p','',`Scene selector unsupported: ${String(e)}`));}
   }
   function refresh(): void {schedule();}
+  function setIcons(next: Record<string,string>): void { iconAssets={...next};schedule(); }
   function applyState(input: State): void { if (!input?.options) return; state=input; schedule(); }
   function stats(): unknown { return { version:'0.1.0',scans,panelCount,visibleRows:views.length,vueRows,hasActiveNode:!!lastHovered?.uuid,lastError }; }
   function stop(): void {
@@ -474,15 +535,16 @@
       for(const row of (r as Element).querySelectorAll?.('.tree-node')||[]){
         const h=row as HTMLElement;
         for(const key of ['data-vh-tint','data-vh-stripe','data-vh-dim','data-vh-compact'])h.removeAttribute(key);
+        clearGuides(h);
         h.style.removeProperty('--vh-row-color');
-        for(const child of h.querySelectorAll(':scope > .drag-item > .vh-guides,:scope > .drag-item > .vh-icon,:scope > .drag-item > .vh-components,:scope > .drag-item > .vh-active'))child.remove();
+        for(const child of h.querySelectorAll(':scope > .drag-item > .vh-icon,:scope > .drag-item > .vh-components,:scope > .drag-item > .vh-active'))child.remove();
       }
       for(const bar of (r as Element).querySelectorAll?.('.vh-toolbar')||[])bar.remove();
       for(const css of (r as Element).querySelectorAll?.('style[data-vh-style]')||[])css.remove();
     }
     delete w.__vHierarchy388;
   }
-  w.__vHierarchy388={refresh,stop,stats,applyState,showSettings};
+  w.__vHierarchy388={refresh,stop,stats,applyState,setIcons,showSettings};
   // A bounded periodic scan is robust to panel docking and native Vue rerendering.
   // Mutation observer only tracks opening/docking; overlays are not persisted in Vue.
   observer=new MutationObserver(()=>schedule());

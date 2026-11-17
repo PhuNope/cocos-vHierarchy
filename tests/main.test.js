@@ -19,6 +19,8 @@ test('can load, apply settings and persist without changing scene files',async()
   // injection is asynchronous (no actual Editor renderer needed here)
   await new Promise(resolve=>setTimeout(resolve,25));
   assert.ok(executed.some(js=>js.includes('window.__vHierarchy388?.applyState')));
+  assert.ok(executed.some(js=>js.includes('window.__vHierarchy388?.setIcons(')));
+  assert.ok(executed.some(js=>js.includes('data:image/svg+xml;base64,')));
   assert.equal(await main.methods.setOption('zebraStriping',false),true);
   assert.equal(await main.methods.setOption('nonsense',true),false);
   assert.equal(await main.methods.setAppearance('b204319a-288c-484a-8f60-287573a05ab6',{color:4,icon:'📁'}),true);

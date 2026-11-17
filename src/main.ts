@@ -41,11 +41,20 @@ class EditorHierarchyHost {
   private timer: unknown;
   private active = false;
   private script = '';
+  private icons: Record<string, string> = {};
   private state: State = sanitizeState({});
   private readonly repo = new ProjectStateRepository();
 
   start(): void {
-    this.script = fs.readFileSync(path.join(__dirname, 'renderer', 'renderer.js'), 'utf8');
+    this.script = ['guides.js','scene-commands.js','renderer.js']
+      .map((name: string)=>fs.readFileSync(path.join(__dirname, 'renderer', name), 'utf8')).join('\n');
+    const iconDir=path.join(__dirname, '..','static','icons');
+    this.icons={};
+    for (const name of ['folder','camera','light','script','particle','physics','audio','material','prefab','canvas','settings','favorite']) {
+      try {
+        this.icons[name]='data:image/svg+xml;base64,'+fs.readFileSync(path.join(iconDir, name+'.svg')).toString('base64');
+      } catch(err) { console.warn('[vHierarchy] Missing icon asset',name,String(err)); }
+    }
     this.state = this.repo.load();
     this.active = true;
     this.poll();
@@ -88,7 +97,7 @@ class EditorHierarchyHost {
       // Only the main Cocos Editor renderer may own the Hierarchy panel.
       const probe = await this.execute(client.wc, "document.body?.getAttribute('name') === 'main' ? 'main' : 'other'");
       if (probe !== 'main') return;
-      const result = await this.execute(client.wc, `${this.script}\n;window.__vHierarchy388?.applyState(${JSON.stringify(this.state)});({status:'running'});`);
+      const result = await this.execute(client.wc, `${this.script}\n;window.__vHierarchy388?.setIcons(${JSON.stringify(this.icons)});window.__vHierarchy388?.applyState(${JSON.stringify(this.state)});({status:'running'});`);
       if (result?.status === 'running') client.attached = true;
     } finally { client.inFlight = false; }
   }

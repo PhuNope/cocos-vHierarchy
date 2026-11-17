@@ -17,7 +17,9 @@ export interface State { options: Options; appearances: Record<string, Appearanc
 
 /** Based on the 1 grey + 8 rainbow slots in Unity VHierarchyPalette.cs. */
 export const PALETTE = ['#777d89', '#b35e68', '#b48e4f', '#a9a857', '#61a886', '#5d94b5', '#737cc2', '#a36bb4', '#b56e9d'];
-export const ICONS = ['⭐', '📁', '📷', '💡', '🎵', '🎮', '🧩', '🎨', '⚙', '🔒', '🎬', '🖼'];
+export const ICONS = ['folder','camera','light','script','particle','physics','audio','material','prefab','canvas','settings','favorite'];
+/** Legacy 0.1.0 emojis continue to load in saved project settings. */
+export const LEGACY_ICONS = ['⭐', '📁', '📷', '💡', '🎵', '🎮', '🧩', '🎨', '⚙', '🔒', '🎬', '🖼'];
 export const DEFAULT_OPTIONS: Options = {
   enabled: true, navigationBar: true, componentMinimap: true, activationToggle: true,
   hierarchyLines: true, zebraStriping: true, minimalMode: false, sceneSelector: false,
@@ -31,7 +33,7 @@ export function sanitizeAppearance(input: unknown): Appearance {
   const raw = input as Record<string, unknown>;
   const out: Appearance = {};
   if (typeof raw.color === 'number' && Number.isInteger(raw.color) && raw.color >= 0 && raw.color < PALETTE.length) out.color = raw.color;
-  if (typeof raw.icon === 'string' && raw.icon.length <= 16 && (raw.icon === '' || ICONS.includes(raw.icon))) out.icon = raw.icon;
+  if (typeof raw.icon === 'string' && raw.icon.length <= 16 && (raw.icon === '' || (ICONS.includes(raw.icon) || LEGACY_ICONS.includes(raw.icon)))) out.icon = raw.icon;
   if (typeof raw.recursiveColor === 'boolean') out.recursiveColor = raw.recursiveColor;
   if (typeof raw.recursiveIcon === 'boolean') out.recursiveIcon = raw.recursiveIcon;
   return out;

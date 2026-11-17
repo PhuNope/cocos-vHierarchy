@@ -7,6 +7,7 @@ test('sensible defaults and data table from Unity',()=>{
   const s=sanitizeState({});
   assert.equal(s.options.enabled,true);assert.equal(s.options.sceneSelector,false);
   assert.equal(PALETTE.length,9);assert.equal(ICONS.length,12);
+  assert.ok(ICONS.includes('folder'));
 });
 test('only known settings survive untrusted user configuration',()=>{
   const s=sanitizeState({options:{enabled:false,guideMode:'bogus',hierarchyLines:'false',colorBrightness:99},appearances:{[id]:{color:7,icon:'⭐',unknown:'no'},'../../bad':{color:1}},bookmarks:[{uuid:id,name:'Root'},{uuid:'not-uuid',name:'Bad'}]});
@@ -22,4 +23,9 @@ test('recursive appearance inherits from parent, explicit child overrides',()=>{
 });
 test('reject icon/colour out of range',()=>{
   assert.deepEqual(sanitizeAppearance({color:-1,icon:'<img onerror=x>',recursiveColor:'true'}),{});
+});
+
+test('new SVG icon keys and old emoji settings remain supported',()=>{
+  assert.equal(sanitizeAppearance({icon:'folder'}).icon,'folder');
+  assert.equal(sanitizeAppearance({icon:'📁'}).icon,'📁');
 });

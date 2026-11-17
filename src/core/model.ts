@@ -1,6 +1,6 @@
 /** Core domain objects. No Editor, Electron or DOM dependencies. */
 export const FEATURES = [
-  'navigationBar', 'componentMinimap', 'activationToggle', 'hierarchyLines',
+  'navigationBar', 'activationToggle', 'hierarchyLines',
   'zebraStriping', 'minimalMode', 'sceneSelector', 'keyboardShortcuts', 'foldOnGuideClick',
 ] as const;
 export type Feature = typeof FEATURES[number];
@@ -21,7 +21,7 @@ export const ICONS = ['folder','camera','light','script','particle','physics','a
 /** Legacy 0.1.0 emojis continue to load in saved project settings. */
 export const LEGACY_ICONS = ['⭐', '📁', '📷', '💡', '🎵', '🎮', '🧩', '🎨', '⚙', '🔒', '🎬', '🖼'];
 export const DEFAULT_OPTIONS: Options = {
-  enabled: true, navigationBar: true, componentMinimap: true, activationToggle: true,
+  enabled: true, navigationBar: true, activationToggle: true,
   hierarchyLines: true, zebraStriping: true, minimalMode: false, sceneSelector: false,
   keyboardShortcuts: true, foldOnGuideClick: true, guideMode: 'tree', colorSaturation: 1, colorBrightness: 1,
 };

@@ -35,3 +35,8 @@ test('guide click folding is on by default and is persisted as a boolean',()=>{
   assert.equal(sanitizeState({options:{foldOnGuideClick:false}}).options.foldOnGuideClick,false);
   assert.equal(sanitizeState({options:{foldOnGuideClick:'false'}}).options.foldOnGuideClick,true);
 });
+
+test('component minimap is intentionally absent, including migrated settings',()=>{
+  const state=sanitizeState({options:{componentMinimap:true}});
+  assert.equal(Object.hasOwn(state.options,'componentMinimap'),false);
+});

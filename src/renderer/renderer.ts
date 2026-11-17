@@ -4,13 +4,13 @@
  * Uses a reversible private DOM overlay because Cocos exposes no public per-row decorator.
  */
 (() => {
-  type Flag = 'navigationBar' | 'componentMinimap' | 'activationToggle' | 'hierarchyLines' | 'zebraStriping' | 'minimalMode' | 'sceneSelector' | 'keyboardShortcuts' | 'foldOnGuideClick';
+  type Flag = 'navigationBar' | 'activationToggle' | 'hierarchyLines' | 'zebraStriping' | 'minimalMode' | 'sceneSelector' | 'keyboardShortcuts' | 'foldOnGuideClick';
   interface Opts extends Record<Flag, boolean> { enabled: boolean; guideMode: 'tree' | 'minimal'; colorSaturation: number; colorBrightness: number; }
   interface Appearance { color?: number; icon?: string; recursiveColor?: boolean; recursiveIcon?: boolean; }
   interface Bookmark { uuid: string; name: string; }
   interface State { options: Opts; appearances: Record<string, Appearance>; bookmarks: Bookmark[]; }
   interface TreeDump { uuid?: string; name?: string; depth?: number; parent?: string; active?: boolean; locked?: boolean; readonly?: boolean; isScene?: boolean; components?: Array<{ type?: string; extends?: string[] }>; prefab?: { state?: number }; }
-  interface Item { guide?: { group: Item[]; index: number; result: VHierarchyGuides.Result }; row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; depth: number; padding: number; margin: number; anchor: number; searching: boolean; components: string[]; }
+  interface Item { guide?: { group: Item[]; index: number; result: VHierarchyGuides.Result }; row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; depth: number; padding: number; margin: number; anchor: number; searching: boolean; }
   interface Hook { refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; showSettings(): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
@@ -23,14 +23,14 @@
     '--vh-guide-left', '--vh-guide-elbow-left', '--vh-guide-elbow-width'];
   const GUIDE_COLOR = 'rgba(151,166,187,.42)';
   const OPTIONS: Array<[Flag, string]> = [
-    ['navigationBar', 'Navigation bar / Bookmarks'], ['componentMinimap', 'Component minimap'],
+    ['navigationBar', 'Navigation bar / Bookmarks'],
     ['activationToggle', 'Active quick toggle'], ['hierarchyLines', 'Hierarchy lines'],
     ['zebraStriping', 'Zebra striping'], ['minimalMode', 'Minimal mode'],
     ['foldOnGuideClick', 'Click hierarchy lines to collapse parent'],
     ['sceneSelector', 'Scene selector (experimental)'], ['keyboardShortcuts', 'Keyboard shortcuts'],
   ];
   const DEFAULT: State = {
-    options: { enabled:true, navigationBar:true, componentMinimap:true, activationToggle:true, hierarchyLines:true,
+    options: { enabled:true, navigationBar:true, activationToggle:true, hierarchyLines:true,
       zebraStriping:true, minimalMode:false, sceneSelector:false, keyboardShortcuts:true, foldOnGuideClick:true,
       guideMode:'tree', colorBrightness:1, colorSaturation:1 }, appearances:{}, bookmarks:[],
   };
@@ -72,11 +72,20 @@
     .vh-icon { position:absolute; right:92px; top:2px; z-index:1; width:15px; height:15px; pointer-events:none; object-fit:contain; }
     .vh-emoji { width:auto; font-size:12px; line-height:15px; }
 
-    .vh-components { position:absolute; right:47px; top:0; height:100%; display:flex; align-items:center; gap:2px; z-index:1; pointer-events:auto; max-width:45px; overflow:hidden; }
-    .vh-dot { width:5px; height:8px; border-radius:2px; display:block; flex:none; opacity:.8; }
-    .vh-active { position:absolute; right:25px; top:1px; width:17px; height:17px; z-index:2; display:none; color:#a2d4aa; border:none; border-radius:3px; background:transparent; cursor:pointer; font-size:13px; line-height:16px; padding:0; }
-    .tree-node:hover > .drag-item > .vh-active { display:block; }
-    .tree-node[is-active="false"] .vh-active { color:#c77b7b; }
+    /* Native lock was at left:6px and overlapped the clickable ancestor rail.
+       Reserve a dedicated 20px left gutter while leaving native arrow/icon spacing intact. */
+    .tree[data-vh-lock-gutter] { padding-left:20px !important; }
+    .tree[data-vh-lock-gutter] > .tree-node > .drag-item > ui-icon.lock {
+      left:-18px !important; width:16px; height:20px; line-height:20px;
+      text-align:center; z-index:3; pointer-events:auto;
+    }
+    .vh-active { position:absolute; right:6px; top:3px; width:14px; height:14px;
+      z-index:2; display:block; accent-color:#70b58a; cursor:pointer; margin:0;
+      opacity:.78; }
+    .tree-node:hover > .drag-item > .vh-active,
+    .tree-node[is-active='false'] > .drag-item > .vh-active { opacity:1; }
+    .vh-active[disabled] { opacity:.45; cursor:wait; }
+    .tree-node[data-vh-active-control] > .drag-item > ui-rename-input.name { margin-right:22px; }
     .vh-layer { position:fixed; inset:0; z-index:100000; pointer-events:none; }
     .vh-pop { pointer-events:auto; position:fixed; z-index:100001; background:#252b32; color:#e4eaf2; border:1px solid #657080; border-radius:7px; box-shadow:0 10px 30px #0009; min-width:216px; max-width:330px; padding:11px; font:12px Arial,sans-serif; }
     .vh-pop { max-height: min(85vh, 640px); overflow:auto; }
@@ -88,7 +97,6 @@
     .vh-swatch { width:19px; height:19px; border:1px solid #e1e7e966; border-radius:4px; padding:0; cursor:pointer; }
     .vh-symbol { width:24px; height:24px; background:#48515c; border:1px solid #ffffff21; border-radius:4px; cursor:pointer; padding:3px; display:flex; align-items:center; justify-content:center; }
     .vh-symbol img { width:16px; height:16px; object-fit:contain; pointer-events:none; }
-    .vh-active[disabled] { opacity:.4; cursor:wait; display:block; }
     .vh-footer { font-size:10px; color:#a8b4c1; margin-top:8px; }
     .vh-pop button { color:inherit; }
   `;
@@ -99,6 +107,7 @@
   let queued = false;
   let timer: ReturnType<typeof setInterval> | null = null;
   let observer: MutationObserver | null = null;
+  const treeObservers = new Map<HTMLElement, MutationObserver>();
   let lastHovered: Item | null = null;
   let searchText = '';
   let views: Item[] = [];
@@ -194,9 +203,8 @@
     const icon = children.find(child => visible(child) && (child.tagName.toLowerCase() === 'ui-icon' && !child.classList.contains('arrow') && !child.classList.contains('lock') && !child.classList.contains('edit') || child.tagName.toLowerCase() === 'ui-asset-image')) as HTMLElement | undefined;
     const label = children.find(child => visible(child) && child.matches('ui-rename-input.name,.name')) as HTMLElement | undefined;
     const anchor = icon ? Math.max(0, icon.offsetLeft - 1) : label ? Math.max(0, label.offsetLeft - 1) : Math.max(0, drag.clientWidth - 12);
-    const components = (node?.components || []).map(c => c.type || '').filter(Boolean);
     return { row, drag, node, uuid, name, padding:px(computed.paddingLeft), margin:px(computed.marginLeft), anchor,
-      searching:!!row.closest('.tree[searching]'), components, depth:node?.depth ?? 0 };
+      searching:!!row.closest('.tree[searching]'), depth:node?.depth ?? 0 };
   }
   function nearestAppearance(item: Item, ancestorIds: string[]): Appearance {
     const a = state.appearances[item.uuid] || {};
@@ -208,14 +216,6 @@
       if (parent?.recursiveIcon && parent.icon) icon = parent.icon;
     }
     return { ...a, color: a.color ?? color, icon: a.icon ?? icon };
-  }
-  function componentTone(name: string): string {
-    if (/Camera|Light/i.test(name)) return '#e4ae67';
-    if (/Animation|Spine|Skeleton|Armature/i.test(name)) return '#caa8ff';
-    if (/Collider|RigidBody|Physics/i.test(name)) return '#8cd3dd';
-    if (/UITransform|Canvas|Layout|Widget|Label/i.test(name)) return '#7ac5ff';
-    if (/Audio/i.test(name)) return '#82ddac';
-    return '#a9b5c5';
   }
   function changeAttr(node: HTMLElement, key: string, value?: string): void {
     if (value === undefined) { if (node.hasAttribute(key)) node.removeAttribute(key); }
@@ -310,20 +310,33 @@
         || ensureControl(item, 'vh-icon', () => el('span','vh-icon vh-emoji'));
       if (marker.textContent !== displayIcon) marker.textContent = displayIcon;
     } else iconEl?.remove();
-    const dots = item.drag.querySelector(':scope > .vh-components') as HTMLElement | null;
-    if (enabled && opts.componentMinimap && item.components.length > 0) {
-      const holder = dots || ensureControl(item, 'vh-components', () => el('div','vh-components'));
-      const types = item.components.slice(0, 6);
-      const html = types.map(c => `<span class="vh-dot" style="background:${componentTone(c)}"></span>`).join('');
-      if (holder.innerHTML !== html) holder.innerHTML = html;
-      holder.title = item.components.join('\n');
-    } else dots?.remove();
-    const activeButton = item.drag.querySelector(':scope > .vh-active') as HTMLButtonElement | null;
+    // Component minimap has been removed by product request; clean up remnants
+    // from any previously injected renderer instance.
+    item.drag.querySelector(':scope > .vh-components')?.remove();
+    changeAttr(item.row, 'data-vh-active-control', enabled && opts.activationToggle && !!item.uuid && !item.node?.isScene && !item.node?.readonly ? 'true' : undefined);
+    const existing = item.drag.querySelector(':scope > .vh-active') as HTMLElement | null;
     if (enabled && opts.activationToggle && item.uuid && !item.node?.isScene && !item.node?.readonly) {
-      const target = activeButton || ensureControl(item, 'vh-active', () => btn('◉', 'Toggle node active (A)', () => { void toggleActive(item); }, 'vh-active')) as HTMLButtonElement;
-      target.textContent = item.node?.active === false ? '○' : '◉';
-      target.disabled = VHierarchySceneCommands.isPending(item.uuid);
-    } else activeButton?.remove();
+      if (existing && existing.tagName !== 'INPUT') existing.remove();
+      let checkbox = item.drag.querySelector(':scope > input.vh-active') as HTMLInputElement | null;
+      if (!checkbox) {
+        checkbox = el('input','vh-active');
+        checkbox.type = 'checkbox';
+        checkbox.title = 'Enable / Disable node (A)';
+        checkbox.setAttribute('aria-label', 'Node Active');
+        checkbox.addEventListener('mousedown',e=>e.stopPropagation());
+        checkbox.addEventListener('click',e=>e.stopPropagation());
+        checkbox.addEventListener('dblclick',e=>e.stopPropagation());
+        checkbox.addEventListener('change',e=>{
+          e.stopPropagation();
+          // The Scene dump is authoritative; the checkbox is only a command UI.
+          const clicked = views.find(v=>v.row===checkbox!.closest('.tree-node'));
+          if (clicked) void toggleActive(clicked);
+        });
+        item.drag.appendChild(checkbox);
+      }
+      if (!VHierarchySceneCommands.isPending(item.uuid)) checkbox.checked = item.node?.active !== false;
+      checkbox.disabled = VHierarchySceneCommands.isPending(item.uuid) || !!item.node?.locked;
+    } else existing?.remove();
   }
   function findToolbar(container: HTMLElement): HTMLElement {
     let bar = container.querySelector(':scope > .vh-toolbar') as HTMLElement | null;
@@ -365,6 +378,29 @@
     if (state.options.sceneSelector && !scene) bar.insertBefore(btn('▤', 'Scene selector', () => { void showScenes(); }), bar.lastElementChild);
     if (!state.options.sceneSelector) scene?.remove();
   }
+  /** Watch native Vue tree changes so guides render in the expand frame, not at
+   * the 1.4s resilience polling interval. Ignore changes from our own controls. */
+  function observeTree(tree: HTMLElement): void {
+    if (treeObservers.has(tree)) return;
+    const watcher = new MutationObserver(records => {
+      const nativeChange = records.some(m => {
+        if (m.type === 'attributes') return true; // filtered to native Vue attributes
+        if (m.target === tree) return true; // added/removed direct rows
+        const changed = [...m.addedNodes, ...m.removedNodes];
+        return changed.some(n => n instanceof Element &&
+          (n.matches('.tree-node') || !!n.querySelector('.tree-node')));
+      });
+      if (nativeChange) schedule();
+    });
+    watcher.observe(tree, { childList:true, subtree:true, attributes:true,
+      attributeFilter:['is-expand','is-parent','is-active','is-selected','is-animating','state'] });
+    treeObservers.set(tree, watcher);
+  }
+  function pruneTreeObservers(): void {
+    for (const [tree, watcher] of treeObservers) if (!tree.isConnected) {
+      watcher.disconnect(); treeObservers.delete(tree);
+    }
+  }
   function scan(): void {
     queued = false;
     if (stopped) return;
@@ -381,6 +417,8 @@
           const tree = treeEl as HTMLElement;
           if (scannedTrees.has(tree)) continue; scannedTrees.add(tree);
           listRoot = tree;
+          observeTree(tree);
+          changeAttr(tree, 'data-vh-lock-gutter', state.options.enabled ? 'true' : undefined);
           rootHost = tree.getRootNode() as Document | ShadowRoot;
           renderToolbar(tree);
           const rows = [...tree.querySelectorAll(':scope > .tree-node')] as HTMLElement[];
@@ -402,6 +440,7 @@
         }
       }
     } catch (e) { logError('scan',e); }
+    finally { pruneTreeObservers(); }
   }
   function schedule(): void { if (!stopped && !queued) { queued=true; requestAnimationFrame(scan); } }
   function listen(root: Document | ShadowRoot): void {
@@ -569,11 +608,15 @@
   function stats(): unknown { return { version:'0.1.0',scans,panelCount,visibleRows:views.length,vueRows,hasActiveNode:!!lastHovered?.uuid,lastError }; }
   function stop(): void {
     stopped=true; if(timer)clearInterval(timer);observer?.disconnect();pop?.remove();
+    for (const watcher of treeObservers.values()) watcher.disconnect();
+    treeObservers.clear();
     for(const release of listeners) release(); listeners.length=0;
     for(const panel of panels())for(const r of roots(panel)){
+      for(const tree of (r as Element).querySelectorAll?.('.tree[data-vh-lock-gutter]')||[])
+        tree.removeAttribute('data-vh-lock-gutter');
       for(const row of (r as Element).querySelectorAll?.('.tree-node')||[]){
         const h=row as HTMLElement;
-        for(const key of ['data-vh-tint','data-vh-stripe','data-vh-dim','data-vh-compact'])h.removeAttribute(key);
+        for(const key of ['data-vh-tint','data-vh-stripe','data-vh-dim','data-vh-compact','data-vh-active-control'])h.removeAttribute(key);
         clearGuides(h);
         h.style.removeProperty('--vh-row-color');
         for(const child of h.querySelectorAll(':scope > .drag-item > .vh-icon,:scope > .drag-item > .vh-components,:scope > .drag-item > .vh-active'))child.remove();

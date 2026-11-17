@@ -16,6 +16,9 @@ namespace VHierarchySceneCommands {
       const newDump = { ...prop, value: !prop.value };
       const result = await request('scene', 'set-property', { uuid, path: 'active', dump: newDump, record: true });
       if (result !== true) throw new Error('scene:set-property rejected active change');
+      // Creator 3.8's public Scene message persists the undo snapshot and marks
+      // the scene dirty. Never snapshot before a rejected/no-op mutation.
+      await request('scene', 'snapshot');
       // Authoritative native Hierarchy update follows Cocos' Scene change notification.
       return true;
     } finally { running.delete(uuid); }

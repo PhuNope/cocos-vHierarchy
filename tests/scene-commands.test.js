@@ -17,10 +17,12 @@ test('active toggle does not assign to readonly Vue/Scene snapshots',async()=>{
   };
   assert.equal(await commands.toggleActive(uuid,req),true);
   assert.equal(dump.active.value,true);
-  assert.deepEqual(events.map(e=>e.msg),['query-node','set-property']);
+  assert.deepEqual(events.map(e=>e.msg),['query-node','set-property','snapshot']);
   assert.equal(events[1].arg.dump.value,false);
   assert.equal(events[1].arg.record,true);
   assert.equal(events[1].arg.path,'active');
+  assert.equal(events[2].pkg,'scene');
+  assert.equal(events[2].arg,undefined);
 });
 test('active toggle rejects unexpected dumps without writes',async()=>{
   let calls=0;
@@ -40,5 +42,39 @@ test('active toggle prevents concurrent writes to same node',async()=>{
 });
 test('failed Scene commits release lock so user can retry',async()=>{
   await assert.rejects(()=>commands.toggleActive(uuid,async(pkg,msg)=> msg==='query-node'?{active:{value:true}}:false),/rejected/);
+  assert.equal(commands.isPending(uuid),false);
+});
+
+test('successful disable and re-enable each create exactly one scene snapshot',async()=>{
+  let active=true;
+  const sequence=[];
+  const req=async(pkg,msg,arg)=>{
+    sequence.push(msg);
+    if(msg==='query-node')return {active:{value:active}};
+    if(msg==='set-property'){active=arg.dump.value;return true;}
+    if(msg==='snapshot')return undefined;
+  };
+  assert.equal(await commands.toggleActive(uuid,req),true);
+  assert.equal(active,false);
+  assert.equal(await commands.toggleActive(uuid,req),true);
+  assert.equal(active,true);
+  assert.deepEqual(sequence,['query-node','set-property','snapshot','query-node','set-property','snapshot']);
+});
+test('failed set-property never snapshots scene',async()=>{
+  const calls=[];
+  await assert.rejects(()=>commands.toggleActive(uuid,async(pkg,msg)=>{
+    calls.push(msg);return msg==='query-node'? {active:{value:true}} : false;
+  }),/rejected/);
+  assert.deepEqual(calls,['query-node','set-property']);
+});
+test('snapshot failure is reported without a second active mutation',async()=>{
+  const calls=[];
+  await assert.rejects(()=>commands.toggleActive(uuid,async(pkg,msg)=>{
+    calls.push(msg);
+    if(msg==='query-node')return {active:{value:true}};
+    if(msg==='set-property')return true;
+    throw new Error('snapshot IPC failure');
+  }),/snapshot IPC failure/);
+  assert.deepEqual(calls,['query-node','set-property','snapshot']);
   assert.equal(commands.isPending(uuid),false);
 });

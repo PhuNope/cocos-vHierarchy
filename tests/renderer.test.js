@@ -44,9 +44,11 @@ test('left action slots have gap-free 42px hit regions, preserving guide space',
   assert.match(renderer,/\.tree\[data-vh-lock-gutter\] \{[\s\S]*?padding-left:var\(--vh-action-gutter-width\) !important/);
   assert.match(renderer,/label, textarea, button, \[contenteditable\], \.vh-active-hit/);
 });
-test('palette icon is next to node name and does not cover right-aligned layer',()=>{
-  assert.match(renderer,/item\.drag\.insertBefore\(paletteIcon, item\.nameEl\)/);
+test('palette icon uses Prefab native slot and keeps Layer/component icon on the right',()=>{
+  assert.match(renderer,/VHierarchyPrefabIcons\.sync\(item, paletteIcon, enabled\)/);
   assert.match(renderer,/\.vh-icon \{ position:relative; flex:0 0 15px/);
+  assert.match(renderer,/\.tree-node\[data-vh-prefab-icon-replaced='true'\]/);
+  assert.match(renderer,/\.vh-node-layer/);
 });
 test('hoverable native lock has a full-width gutter target and never display none',()=>{
   assert.match(renderer,/display:inline-flex !important/);

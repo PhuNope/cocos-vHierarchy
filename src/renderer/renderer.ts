@@ -96,6 +96,22 @@
     .tree-node:hover > ui-drag-item.drag-item::after,
     .tree-node[is-selected='true'] > ui-drag-item.drag-item::before,
     .tree-node[is-selected='true'] > ui-drag-item.drag-item::after {opacity:1}
+    /* Prefab icon replacement: vHierarchy icon occupies the native icon slot.
+       Cocos' original ui-asset-image/ui-icon stays in the DOM, transparent and
+       overlapped so native locate-asset click/tooltip and Vue bindings survive.
+       The component/TypeScript indicator AFTER the name remains untouched. */
+    .tree-node[data-vh-prefab-icon-replaced='true'] > .drag-item > .vh-icon {
+      flex:0 0 var(--vh-prefab-icon-width,16px) !important;
+      width:var(--vh-prefab-icon-width,16px) !important;
+      height:16px; margin-left:0 !important; pointer-events:none;
+    }
+    .tree-node[data-vh-prefab-icon-replaced='true'] > .drag-item > [data-vh-native-prefab-icon='true'] {
+      opacity:0 !important;
+      margin-left:calc(0px - var(--vh-prefab-icon-width,16px)) !important;
+      position:relative !important;
+      z-index:2 !important;
+      pointer-events:auto !important;
+    }
     .vh-icon { position:relative; flex:0 0 15px; width:15px; height:15px; margin-left:2px; z-index:1; pointer-events:none; object-fit:contain; }
     .vh-emoji { width:auto; font-size:12px; line-height:15px; }
     .vh-tinted-icon { display:inline-block; background-color:var(--vh-icon-color,#dce5ef);
@@ -579,11 +595,11 @@
         || ensureControl(item, 'vh-icon', () => el('span','vh-icon vh-emoji'));
       if (marker.textContent !== displayIcon) marker.textContent = displayIcon;
     } else iconEl?.remove();
-    // Custom palette icon belongs beside the native node-type glyph, NOT on
-    // the far right where Cocos' component indicator and Layer now live.
-    const paletteIcon = item.drag.querySelector(':scope > .vh-icon');
-    if (paletteIcon && item.nameEl && paletteIcon.nextElementSibling !== item.nameEl)
-      item.drag.insertBefore(paletteIcon, item.nameEl);
+    // Prefab nodes REPLACE the original left-hand asset glyph visually rather
+    // than showing two side-by-side icons. The original stays clickable (e.g.
+    // locate Prefab asset); normal nodes retain the previous icon placement.
+    const paletteIcon = item.drag.querySelector(':scope > .vh-icon') as HTMLElement | null;
+    VHierarchyPrefabIcons.sync(item, paletteIcon, enabled);
     drawLayer(item);
     // Never hide or replace Cocos' own native component icon on the right.
     // Component minimap has been removed by product request; clean up remnants
@@ -1242,6 +1258,12 @@
       }
       for(const row of (r as Element).querySelectorAll?.('.tree-node')||[]){
         const h=row as HTMLElement;
+        // Restore native icon visibility before removing renderer styles.
+        const drag = h.querySelector(':scope > .drag-item') as HTMLElement | null;
+        if (drag) for (const native of drag.querySelectorAll(':scope > [data-vh-native-prefab-icon]'))
+          native.removeAttribute('data-vh-native-prefab-icon');
+        h.removeAttribute('data-vh-prefab-icon-replaced');
+        h.style.removeProperty('--vh-prefab-icon-width');
         for(const key of ['data-vh-tint','data-vh-stripe','data-vh-dim','data-vh-compact','data-vh-active-control','data-vh-has-layer','data-vh-native-component','data-vh-inherited-color'])h.removeAttribute(key);
         clearGuides(h);
         for (const prop of PAINT_PROPS) h.style.removeProperty(prop);

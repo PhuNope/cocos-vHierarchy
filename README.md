@@ -1,3 +1,10 @@
+## Patch 20 (0.1.0) — Replace native Prefab icon in the native slot
+
+- In a Prefab editing stage or Prefab instance Hierarchy, choosing a vHierarchy icon now **visually replaces the original left-side Prefab asset/icon** instead of adding a second icon beside it. This applies to both the root `ui-asset-image.root` glyph and native `ui-icon` glyphs before the name. The custom icon takes the 16px (or measured) native slot without shifting the name; no extra column is created.
+- Cocos still owns the original native glyph in the DOM. A transparent overlay maintains its tooltip and click behavior (including locate-Prefab-asset actions); removing the custom icon, disabling the extension or unloading it restores native styling. The trailing Cocos component/TypeScript icon after the name and Layer badge remain untouched.
+- Prefab name color remains entirely owned by Cocos (green/red state), and color backgrounds, search, rename and Prefab appearance persistence continue as before. This affects editor-only decoration, not `.prefab` assets.
+- Includes regression tests for source Prefab root, instance/native row replacement, native icon recreation, clearing/removing decoration, normal nodes and right-side component icon preservation. **Confirm on Cocos Creator 3.8.8 GUI**, as the DOM behavior may differ with specific Prefab assets.
+
 ## Patch 19 (0.1.0) — Preserve Prefab colors, icons and Cocos name styling
 
 - **Prefab instances retain visual appearance:** Node-specific colors/icons were previously saved only by Scene node UUID, which changes when a Prefab is instantiated. Patch 19 adds a project-only `prefabAppearances` mapping keyed by the Prefab asset UUID and the node's relative Hierarchy `level` (`prefab|<asset UUID>|root` or `prefab|<asset UUID>|0_1`). The key is stable across instances at different Scene positions. Explicit node UUID appearances retain priority over the Prefab template; recursive color/icon inheritance continues to work.

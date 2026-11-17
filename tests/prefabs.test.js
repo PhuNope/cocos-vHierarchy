@@ -59,3 +59,17 @@ test('Prefab visual CSS leaves the native prefab label color untouched',()=>{
   assert.doesNotMatch(renderer,/ui-rename-input\.name\s*\{[^}]*\bcolor\s*:/);
   assert.doesNotMatch(renderer,/ui-rename-input\.name\s*\{[^}]*\bopacity\s*:/);
 });
+
+test('Prefab icon skin hides only native left glyph, not prefab label or right component',()=>{
+  const renderer=fs.readFileSync(path.join(__dirname,'../dist/renderer/renderer.js'),'utf8');
+  assert.match(renderer,/VHierarchyPrefabIcons\.sync\(item, paletteIcon, enabled\)/);
+  assert.match(renderer,/data-vh-prefab-icon-replaced='true'/);
+  assert.match(renderer,/> \[data-vh-native-prefab-icon='true'\] \{/);
+  assert.match(renderer,/opacity:0 !important/);
+  assert.match(renderer,/margin-left:calc\(0px - var\(--vh-prefab-icon-width,16px\)\) !important/);
+  assert.match(renderer,/pointer-events:auto !important/);
+  assert.match(renderer,/native\.removeAttribute\('data-vh-native-prefab-icon'\)/);
+  assert.match(renderer,/h\.removeAttribute\('data-vh-prefab-icon-replaced'\)/);
+  assert.doesNotMatch(renderer,/ui-rename-input\.name\s*\{[^}]*\bcolor\s*:/);
+  assert.doesNotMatch(renderer,/ui-icon\[default="asset"\]\s*\{[^}]*opacity:0/);
+});

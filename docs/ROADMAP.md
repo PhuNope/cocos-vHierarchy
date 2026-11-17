@@ -176,3 +176,11 @@ Curated searchable Material Symbols Outlined catalog with official Google Fonts 
 - [x] Regression coverage for prefab root, child, nested asset, invalid identifiers, and persistence/reload
 - [ ] Verify Creator 3.8.8 GUI workflows: drag/drop prefab asset, prefab mode, duplicated instances, nested prefab, child reordering
 - [ ] Consider PrefabInfo.fileId-based mapping if a stable ID becomes available through a supported Scene API (current `level` mapping changes when sibling order changes)
+
+### M2 — Patch 20: Native Prefab icon-slot parity
+
+- [x] Replace native Prefab asset/root glyph visually in the same left-hand slot rather than appending an extra icon near the name
+- [x] Preserve original native Prefab DOM click/locate asset hit target and native component/TypeScript icon on far right
+- [x] Clear replacement state on appearance removal, extension disable/unload or native icon recreation
+- [x] Keep Prefab name color (green/red) unchanged by icon replacement
+- [ ] Verify icon slot, click to locate asset, Prefab editing, nested Prefab and drag instance directly in Creator 3.8.8

@@ -1,0 +1,44 @@
+name: Publish vHierarchy 0.1.0
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-v0.1.0.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.repository == 'PhuNope/cocos-vHierarchy' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify and package
+        run: |
+          npm install --no-audit --no-fund
+          npm run typecheck
+          npm test
+          npm run pack:local
+          mv vHierarchy-0.1.0-test.zip vHierarchy-0.1.0.zip
+      - name: Publish tag, release notes and ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v0.1.0 >/dev/null 2>&1; then
+            echo 'Release v0.1.0 already exists; not overwriting.'
+            exit 0
+          fi
+          gh release create v0.1.0 \
+            ./vHierarchy-0.1.0.zip \
+            --title 'vHierarchy 0.1.0' \
+            --notes-file .github/release-notes/v0.1.0.md \
+            --target "$GITHUB_SHA" \
+            --latest

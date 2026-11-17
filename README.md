@@ -30,7 +30,7 @@ See [the full phased feature-parity plan](https://github.com/PhuNope/cocos-vHier
 1. Extract `vHierarchy-0.1.0-test.zip` into your project's `extensions` directory. The resulting path must be `<cocos-project>/extensions/cocos-vhierarchy/package.json`.
 2. In Cocos Creator, refresh the extension from **Extension Manager**, or restart the Editor.
 3. Open the native **Hierarchy** panel. The top bar displays `vH`. Open the **Panel → vHierarchy → Settings / Palette** menu to configure it.
-4. Hover any node, then **Alt + right-click** for color/icon, recursive application, or reset. Hover a row to see the active toggle (if the node is editable).
+4. Hover any node, then **Alt + right-click** for color/icon, recursive application, or reset. Use the Active checkbox at the right edge of an editable node row.
 5. In the toolbar, type a node name to dim nonmatching rows; the star bookmarks the last hovered node. Click a bookmark to select it. Right-click a bookmark to remove it.
 
 ### Enabled features in 0.1.0
@@ -41,8 +41,8 @@ See [the full phased feature-parity plan](https://github.com/PhuNope/cocos-vHier
 | Zebra striping and minimal mode | Visual styles on existing native rows |
 | Per-object color palette | 9 slots based on `VHierarchyPalette.cs`; supports recursive inheritance |
 | Per-object icons | Emoji icon chooser, recursive inheritance; **not** Unity-specific raster icons |
-| Component minimap | Type-color dots on the right of rows; visual only |
-| Activation toggle | One-click toggle via `scene:query-node` / `scene:set-property` with `record: true`; rejects unknown/locked/readonly nodes |
+| Component minimap | Removed from the plugin in patch 3 |
+| Activation checkbox | Checkbox via `scene:query-node` / `scene:set-property`, then `scene:snapshot` for dirty/Undo state |
 | Navigation bar and bookmarks | Toolbar, non-destructive search dimming, bookmark selection |
 | Shortcut E | Toggle expanded on hovered parent |
 | Shortcut Shift+E / Ctrl+Shift+E | Isolate / collapse (best effort, using native expand arrows) |
@@ -81,3 +81,12 @@ Requires a recent TypeScript compiler, then `npm run build`, `npm test`, `npm ru
 - [ ] Open existing scenes with many collapsed nodes; ensure guide connectors never obscure native controls
 
 If a test fails, use **Panel → vHierarchy → Diagnostics** and copy logs from the Editor console. Also inspect `window.__vHierarchy388?.stats()` in the main renderer DevTools.
+
+## Patch 3 (0.1.0)
+
+- Every successful Active checkbox/keyboard toggle invokes `scene:snapshot` after `scene:set-property` so Creator records the change, supports Undo/Redo, and marks the Scene as modified.
+- Observe native Hierarchy row insert/remove/expand via `MutationObserver` and redraw before the next paint, without waiting for the 1.4-second fallback scan.
+- Remove the plugin's component minimap/dots and their configuration option. Native Cocos component icons follow Cocos preferences.
+- Present Active as a real checkbox; stop propagation so it does not select/drag the node.
+- Move the native lock icon into a dedicated 20px gutter on the left; keep clickable lines separate. Gutter, controls and observers are cleaned on unload.
+- Verify in Creator 3.8.8 GUI: Scene dirty asterisk, Undo/Redo, collapse/expand latency, lock click-target, narrow panes and different DPI scales.

@@ -15,6 +15,16 @@ Baseline inputs: supplied Unity `vHierarchy.zip`, Cocos 3.8.8 `app.asar.zip`, an
 
 **Assets:** The supplied Unity ZIP includes no original standalone PNG/SVG UI icons. `VHierarchyPalette.ResetIcons()` lists **Unity built-in Editor icon names**. 12 original SVG replacements in `static/icons` map their semantic categories; these are not the original Unity icon bitmaps. The supplied `Read me.pdf` contains an actual Unity menu screenshot for visual reference.
 
+## Patch 3 — implemented, pending GUI validation
+
+- [x] Call `scene:snapshot` exactly once per successful Active mutation; keep failed Scene edits snapshot-free.
+- [x] Draw line guides after native Hierarchy row insertion or expand state changes using a tree-local MutationObserver; retain slow scan only as fallback.
+- [x] Hide/remove the plugin's component minimap and sanitize old option values.
+- [x] Replace activation glyph with a native checkbox, with disabled/read-only behavior and no row selection.
+- [x] Move native lock icon into a dedicated 20px left gutter, away from clickable hierarchy lines; clean up on unload.
+- [x] Unit/smoke regression suite: 28/28 tests.
+- [ ] Manual GUI verification in Cocos Creator 3.8.8 of dirty marker, Undo/Redo, lock positioning, line timing and native component icon preferences.
+
 ## Patch 2 — implemented, pending GUI validation
 
 - [x] Group existing commands under **Panel → vHierarchy → ...**.

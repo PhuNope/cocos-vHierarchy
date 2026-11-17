@@ -73,13 +73,17 @@
     .vh-icon { position:relative; flex:0 0 15px; width:15px; height:15px; margin-left:2px; z-index:1; pointer-events:none; object-fit:contain; }
     .vh-emoji { width:auto; font-size:12px; line-height:15px; }
 
-    /* The reserved action strip is a real pointer target across its ENTIRE width.
-       This includes the empty areas around a hidden hover-only checkbox.
-       Its lower z-index keeps native Lock and Active above it and does not
-       cover the native hierarchy guide/arrow region to the right. */
-    .tree[data-vh-lock-gutter] { padding-left:42px !important; }
+    /* Quick Toggle off: reclaim exactly the 20px checkbox column, leaving only
+       the native 22px Lock column. The whole remaining gutter stays hoverable.
+       No native arrow/guide offset is modified. */
+    .tree[data-vh-lock-gutter] {
+      --vh-action-gutter-width:22px;
+      padding-left:var(--vh-action-gutter-width) !important;
+    }
+    .tree[data-vh-lock-gutter][data-vh-quick-toggle] { --vh-action-gutter-width:42px; }
     .tree[data-vh-lock-gutter] > .tree-node > .drag-item > .vh-action-gutter {
-      position:absolute; left:-42px; top:0; width:42px; height:100%;
+      position:absolute; left:calc(0px - var(--vh-action-gutter-width)); top:0;
+      width:var(--vh-action-gutter-width); height:100%;
       display:block; box-sizing:border-box; z-index:3; pointer-events:auto;
       cursor:default; border-right:1px solid rgba(134,153,173,.28);
       background:rgba(82,100,122,.19);
@@ -96,7 +100,8 @@
     }
     .tree[data-vh-lock-gutter] > .tree-node > .drag-item > ui-icon.lock {
       display:inline-flex !important; align-items:center; justify-content:center;
-      left:-42px !important; width:22px; height:20px; top:0;
+      left:calc(0px - var(--vh-action-gutter-width)) !important;
+      width:22px; height:20px; top:0;
       z-index:4; opacity:0; pointer-events:auto !important;
     }
     .tree[data-vh-lock-gutter] > .tree-node:hover > .drag-item > ui-icon.lock,
@@ -136,9 +141,21 @@
       border-color:#75b6ff; box-shadow:0 0 0 1px rgba(117,182,255,.48);
     }
     .vh-active:disabled + .vh-active-box { opacity:.45; cursor:wait; }
-    /* Layer always reserves a right-aligned component slot. When Cocos draws
-       a native component icon, preserve it and put an 8px visual gap before it.
-       Without an icon, keep 26px empty so Layer labels still line up neatly. */
+    /* The native rename input is a flex child with min-width:32px in Creator.
+       Override only its DISPLAY sizing while Layer is present. The real value,
+       edit interactions, native search and node name stay untouched. This lets
+       long names render an ellipsis instead of evicting the Layer label. */
+    .tree-node[data-vh-has-layer='true'] > .drag-item > ui-rename-input.name {
+      flex:1 1 0% !important; width:0 !important; min-width:0 !important;
+      overflow:hidden !important; text-overflow:ellipsis !important;
+      white-space:nowrap !important;
+    }
+    .tree-node[data-vh-has-layer='true'] > .drag-item > ui-rename-input.name::part(value) {
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    /* Layer remains allocated at the far right regardless of node-name length.
+       The browser shrinks the name, not the metadata. Keep space for the native
+       component glyph (or a matching 26px slot when absent). */
     .vh-node-layer { display:inline-flex; flex:0 0 auto; align-items:center;
       min-width:0; margin-left:auto; margin-right:26px; padding-left:6px;
       border-left:1px solid rgba(161,176,192,.4);
@@ -181,8 +198,6 @@
   let observer: MutationObserver | null = null;
   const treeObservers = new Map<HTMLElement, MutationObserver>();
   const layerLookup = new VHierarchyLayers.Lookup(uuid => req('scene','query-node', uuid), () => schedule());
-  const textCanvas = document.createElement('canvas');
-  const textContext = textCanvas.getContext('2d');
   let lastHovered: Item | null = null;
   let searchText = '';
   let views: Item[] = [];
@@ -355,9 +370,9 @@
       }
     }
   }
-  /** Render Layer in the RIGHT metadata area: [node name ...] [Layer] [Cocos icon].
-   * Never alter node.name or ui-rename-input.value: native search and rename
-   * must see the exact original name. Hide Layer if insufficient free width.
+  /** Render Layer in the RIGHT metadata area: [truncated name …] [Layer] [Cocos icon].
+   * Native ui-rename-input and its value are left unchanged for search/rename.
+   * CSS, not a width-based visibility test, truncates long visual node names.
    */
   function drawLayer(item: Item): void {
     const old = item.drag.querySelector(':scope > .vh-node-layer') as HTMLElement | null;
@@ -372,16 +387,9 @@
     const label = layerLookup.get(item.uuid, item.node?.layer);
     if (!label) { clear(); return; }
 
-    const font = getComputedStyle(item.nameEl).font || getComputedStyle(item.drag).font || '12px Arial';
-    if (textContext) textContext.font = font;
-    const layerWidth = Math.min(96, Math.ceil((textContext?.measureText(label).width ?? label.length * 7) + 14));
     const nativeComponent = item.drag.querySelector(':scope > ui-icon[default="asset"][value="typescript"]') as HTMLElement | null;
-    // Include both the icon width AND the visible gap in the responsive width
-    // budget. Rows without native component icons reserve the same right slot.
-    const rightReserve = nativeComponent ? (nativeComponent.offsetWidth || 16) + 8 : 26;
-    const available = item.drag.clientWidth - item.nameEl.offsetLeft - rightReserve;
-    // Always leave enough space for the native node name, even at deep nesting.
-    if (available < layerWidth + 40) { clear(); return; }
+    // Do NOT hide Layer based on the visible length of the node name. Instead,
+    // the native name host shrinks and ellipsizes through the CSS above.
     item.row.style.removeProperty('--vh-node-name-width');
     changeAttr(item.row, 'data-vh-has-layer', 'true');
     changeAttr(item.row, 'data-vh-native-component', nativeComponent ? 'true' : undefined);
@@ -567,6 +575,7 @@
           listRoot = tree;
           observeTree(tree);
           changeAttr(tree, 'data-vh-lock-gutter', state.options.enabled ? 'true' : undefined);
+          changeAttr(tree, 'data-vh-quick-toggle', state.options.enabled && state.options.activationToggle ? 'true' : undefined);
           rootHost = tree.getRootNode() as Document | ShadowRoot;
           renderToolbar(tree);
           const rows = [...tree.querySelectorAll(':scope > .tree-node')] as HTMLElement[];
@@ -814,8 +823,10 @@
     treeObservers.clear();
     for(const release of listeners) release(); listeners.length=0;
     for(const panel of panels())for(const r of roots(panel)){
-      for(const tree of (r as Element).querySelectorAll?.('.tree[data-vh-lock-gutter]')||[])
+      for(const tree of (r as Element).querySelectorAll?.('.tree[data-vh-lock-gutter],.tree[data-vh-quick-toggle]')||[]) {
         tree.removeAttribute('data-vh-lock-gutter');
+        tree.removeAttribute('data-vh-quick-toggle');
+      }
       for(const row of (r as Element).querySelectorAll?.('.tree-node')||[]){
         const h=row as HTMLElement;
         for(const key of ['data-vh-tint','data-vh-stripe','data-vh-dim','data-vh-compact','data-vh-active-control','data-vh-has-layer','data-vh-native-component'])h.removeAttribute(key);

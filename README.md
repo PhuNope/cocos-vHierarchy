@@ -7,6 +7,12 @@
 This is a TypeScript Cocos Editor extension inspired by the provided Unity vHierarchy source. It **never patches `app.asar`**. The renderer layer uses a reversible, private Hierarchy DOM/Vue overlay; it may need adjustments for other 3.8.x builds or future Editor updates. If node UUID metadata is unavailable, customization and node mutations are disabled rather than guessing a node.
 
 
+## Patch 10 — Compact Quick Toggle gutter and name ellipsis (still 0.1.0)
+
+- **Quick Toggle off:** when `activationToggle` is disabled in **Panel → vHierarchy → Settings / Palette**, reclaim its 20px checkbox column. The existing 22px native Lock control remains in a separate hoverable gutter; enabling Quick Toggle restores the 42px gutter (22px Lock + 20px checkbox). Native fold guides and arrows are unaffected, and settings persist as before.
+- **Long node names:** reserve the Layer label and native right-side component icon. The native `ui-rename-input.name` host becomes a shrinkable flex item with CSS `text-overflow: ellipsis`, so long visible names truncate with `…` rather than causing the Layer badge to disappear. No write to `node.name` or the rename input value; search and rename remain native. Layer is still hidden in native search and rename modes, as in earlier patches.
+- Regression tests verify the dynamic gutter widths, overlay cleanup, and that no Layer visibility check depends on node-name length. A separate Chromium layout smoke check confirmed 42px → 22px gutter and a visible Layer beside an ellipsized name. **Real Creator 3.8.8 GUI verification is still required.**
+
 ## Patch 9 — Scene dirty after Ctrl+S when toggling Active (still 0.1.0)
 
 - Fixed the Active checkbox / `A` shortcut transaction order. Previously `scene:set-property` with an undocumented `record: true` flag was followed by `scene:snapshot` **after** the property changed; this is not a reliable Undo/dirty transaction after saving.
@@ -17,7 +23,7 @@ This is a TypeScript Cocos Editor extension inspired by the provided Unity vHier
 ## Patch 8 — Row-wide hover + action strip background + Layer icon spacing (still 0.1.0)
 
 - The **42px left Lock/Active strip** now has an actual full-height, pointer-receiving background element. Hovering its empty area triggers the same native row hover as hovering the node name; Lock remains to the left of the checkbox. The strip uses a subtle slate background with clearer hover/selection states, while native guide lines and click targets stay to its right. Background is behind both controls; no Scene data is modified.
-- The read-only **Layer label reserves a 26px empty component area** on rows without a native right-side component indicator. When the native Cocos TypeScript/component icon exists, Layer receives an **8px gap** from that icon. The available-width check accounts for the reserved slot, so Layer disappears safely on very narrow / deep-indented rows. Node name, search and native component icons remain untouched.
+- The read-only **Layer label reserves a 26px empty component area** on rows without a native right-side component indicator. When the native Cocos TypeScript/component icon exists, Layer receives an **8px gap** from that icon. The native name now shrinks first and ellipsizes rather than hiding the Layer when the name is long (Patch 10). Very narrow/deeply-indented Hierarchies still need GUI validation. Node name, search and native component icons remain untouched.
 - The strip/metadata are removed when the extension is disabled/unloaded. **Real GUI verification on Creator 3.8.8 is still required**, especially hovering empty gutter space across locked, selected, and deeply nested nodes.
 
 ## Patch 6 — Unity-style Active checkbox position / Layer alignment (still 0.1.0)
@@ -39,7 +45,7 @@ This is a TypeScript Cocos Editor extension inspired by the provided Unity vHier
 
 - Read each visible node's Layer from the supported `scene:query-node` dump. Cocos's Hierarchy tree summary lacks the Layer field. A bounded (3 in-flight) asynchronous cache avoids requesting Layer on every repaint; polling refreshes stale cache data.
 - Show a subtle, right-aligned Layer label immediately left of the native rightmost component indicator. The badge is a separate, pointer-transparent sibling of `ui-rename-input`; the real node name, rename value and native search are unmodified. vHierarchy's own toolbar search still matches **node names only**, not Layer labels.
-- Hide badges during native Hierarchy search, during rename and when horizontal space is too narrow. Names are truncated only when needed; checkbox, lock and fold guides retain their own hit areas.
+- Hide badges during native Hierarchy search and during rename, but not solely because the node name is long. Names are truncated with CSS ellipsis when needed; checkbox, lock and fold guides retain their own hit areas.
 - Custom Layer labels come from `layer.enumList` in the Scene dump when present; otherwise use Cocos built-ins or a numeric hex value rather than inventing a custom name. Layer controls are display-only; no Scene snapshot is made.
 - The new **Show node layer next to its name** setting is enabled by default and persisted per project. GUI testing on Editor 3.8.8, including custom layers, remains necessary.
 

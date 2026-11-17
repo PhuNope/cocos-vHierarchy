@@ -15,8 +15,8 @@ test('renderer observes native hierarchy mutations instead of waiting for interv
   assert.match(renderer, /for \(const watcher of treeObservers.values\(\)\)\s*watcher.disconnect\(\)/);
 });
 test('lock moves to dedicated left gutter rather than crossing guide lines',()=>{
-  assert.match(renderer, /padding-left:42px !important/);
-  assert.match(renderer, /left:-42px !important/);
+  assert.match(renderer, /padding-left:var\(--vh-action-gutter-width\) !important/);
+  assert.match(renderer, /left:calc\(0px - var\(--vh-action-gutter-width\)\) !important/);
   assert.match(renderer, /data-vh-lock-gutter/);
 });
 test('removes old component dots and never creates component minimap holder',()=>{
@@ -37,11 +37,11 @@ test('checkbox stays in the contiguous cell immediately RIGHT of native lock',()
   assert.doesNotMatch(renderer,/nativeComponent\.remove\(/);
 });
 test('left action slots have gap-free 42px hit regions, preserving guide space',()=>{
-  const lock = /left:-42px !important; width:22px; height:20px/;
+  const lock = /left:calc\(0px - var\(--vh-action-gutter-width\)\) !important;\s*width:22px; height:20px/;
   const active = /left:-20px; top:0; width:20px; height:20px/;
   assert.match(renderer,lock);
   assert.match(renderer,active);
-  assert.match(renderer,/\.tree\[data-vh-lock-gutter\] \{ padding-left:42px !important/);
+  assert.match(renderer,/\.tree\[data-vh-lock-gutter\] \{[\s\S]*?padding-left:var\(--vh-action-gutter-width\) !important/);
   assert.match(renderer,/label, textarea, button, \[contenteditable\], \.vh-active-hit/);
 });
 test('palette icon is next to node name and does not cover right-aligned layer',()=>{
@@ -67,7 +67,7 @@ test('Scene popup can close via explicit button, Escape and outside click',()=>{
 
 test('entire left action gutter is hoverable, including empty checkbox area',()=>{
   assert.match(renderer,/\.tree\[data-vh-lock-gutter\] > \.tree-node > \.drag-item > \.vh-action-gutter \{/);
-  assert.match(renderer,/left:-42px; top:0; width:42px; height:100%/);
+  assert.match(renderer,/left:calc\(0px - var\(--vh-action-gutter-width\)\); top:0;\s*width:var\(--vh-action-gutter-width\); height:100%/);
   assert.match(renderer,/z-index:3; pointer-events:auto/);
   assert.match(renderer,/item\.drag\.prepend\(gutter\)/);
   assert.match(renderer,/gutter\.setAttribute\('aria-hidden', 'true'\)/);
@@ -86,4 +86,26 @@ test('full gutter and layer spacing are removed when extension is disabled or un
   assert.match(renderer,/else\s+priorGutter\?\.remove\(\)/);
   assert.match(renderer,/\.vh-node-layer,:scope > \.drag-item > \.vh-action-gutter/);
   assert.match(renderer,/data-vh-has-layer', 'data-vh-native-component/);
+});
+
+
+test('Quick Toggle off reclaims only its 20px gutter column, preserving native Lock',()=>{
+  assert.match(renderer, /--vh-action-gutter-width:22px/);
+  assert.match(renderer, /\.tree\[data-vh-lock-gutter\]\[data-vh-quick-toggle\] \{ --vh-action-gutter-width:42px; \}/);
+  assert.match(renderer, /changeAttr\(tree, 'data-vh-quick-toggle', state\.options\.enabled && state\.options\.activationToggle \? 'true' : undefined\)/);
+  assert.match(renderer, /enabled && opts\.activationToggle && item\.uuid/);
+  assert.match(renderer, /else\s+existing\?\.remove\(\)/);
+  assert.match(renderer, /tree\.removeAttribute\('data-vh-quick-toggle'\)/);
+  assert.doesNotMatch(renderer, /padding-left:42px !important/);
+});
+
+test('long node names ellipsize before Layer rather than suppressing metadata',()=>{
+  assert.match(renderer, /\.tree-node\[data-vh-has-layer='true'\] > \.drag-item > ui-rename-input\.name/);
+  assert.match(renderer, /flex:1 1 0% !important; width:0 !important; min-width:0 !important/);
+  assert.match(renderer, /overflow:hidden !important; text-overflow:ellipsis !important/);
+  assert.match(renderer, /\.vh-node-layer \{ display:inline-flex; flex:0 0 auto/);
+  assert.match(renderer, /badge\.textContent = label/);
+  assert.doesNotMatch(renderer, /available < layerWidth \+ 40/);
+  assert.doesNotMatch(renderer, /const available = item\.drag\.clientWidth/);
+  assert.match(renderer, /item\.row\.getAttribute\('state'\) === 'rename'/);
 });

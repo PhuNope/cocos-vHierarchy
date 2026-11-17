@@ -74,7 +74,9 @@ test('layer rendering is strictly metadata outside rename input and native searc
   assert.match(renderer,/else if \(badge !== item\.drag\.lastElementChild\)\s*item\.drag\.appendChild\(badge\)/);
   assert.match(renderer,/margin-left:auto; margin-right:26px/);
   assert.match(renderer,/data-vh-native-component='true'\] \.vh-node-layer \{margin-right:8px/);
-  assert.match(renderer,/rightReserve = nativeComponent \? \(nativeComponent\.offsetWidth \|\| 16\) \+ 8 : 26/);
+  assert.match(renderer,/\.tree-node\[data-vh-has-layer='true'\] > \.drag-item > ui-rename-input\.name/);
+  assert.match(renderer,/text-overflow:ellipsis !important/);
+  assert.doesNotMatch(renderer,/available < layerWidth \+ 40/);
   assert.match(renderer,/ui-icon\[default="asset"\]\[value="typescript"\]/);
   assert.doesNotMatch(renderer,/badge\.textContent\s*\+=/);
   assert.match(renderer,/item\.searching \|\| item\.node\?\.isScene/);

@@ -11,7 +11,7 @@
   interface State { options: Opts; appearances: Record<string, Appearance>; bookmarks: Bookmark[]; }
   interface TreeDump { uuid?: string; name?: string; depth?: number; parent?: string; active?: boolean; locked?: boolean; readonly?: boolean; isScene?: boolean; components?: Array<{ type?: string; extends?: string[] }>; prefab?: { state?: number }; layer?: unknown; }
   interface Item { guide?: { group: Item[]; index: number; result: VHierarchyGuides.Result }; row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; nameEl: HTMLElement | null; depth: number; padding: number; margin: number; anchor: number; searching: boolean; }
-  interface Hook { refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; showSettings(): void; }
+  interface Hook { refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
@@ -764,6 +764,14 @@
     wrap.append(btn('Refresh','Re-query scenes from AssetDB',()=>{void showList();}));
     await showList();
   }
+  /** Forward the native Cocos scene:change-node broadcast to the cached Layer data. */
+  function sceneNodeChanged(ids: string[] | null): void {
+    if (stopped || !state.options.enabled || !state.options.showNodeLayers) return;
+    if (ids?.length) for (const uuid of new Set(ids)) layerLookup.invalidate(uuid);
+    else layerLookup.invalidateAll(views.map(item => item.uuid).filter(Boolean));
+    // The query completion schedules a render only if the resolved label changed.
+    // Keep the native node name and search inputs untouched.
+  }
   function refresh(): void {schedule();}
   function setIcons(next: Record<string,string>): void { iconAssets={...next};schedule(); }
   function applyState(input: State): void { if (!input?.options) return; state=input; schedule(); }
@@ -789,7 +797,7 @@
     }
     delete w.__vHierarchy388;
   }
-  w.__vHierarchy388={refresh,stop,stats,applyState,setIcons,showSettings};
+  w.__vHierarchy388={refresh,stop,stats,applyState,setIcons,showSettings,sceneNodeChanged};
   // A bounded periodic scan is robust to panel docking and native Vue rerendering.
   // Mutation observer only tracks opening/docking; overlays are not persisted in Vue.
   observer=new MutationObserver(()=>schedule());

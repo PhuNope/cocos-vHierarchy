@@ -108,3 +108,14 @@ If a test fails, use **Panel → vHierarchy → Diagnostics** and copy logs from
 - Component dots/minimap are removed from row UI. The native Cocos show-component-icon preference is unchanged.
 - Native lock icon is moved into a 20px dedicated left-side gutter so it cannot cover clickable hierarchy guides.
 - Please confirm Scene dirty, Undo/Redo, expand latency and lock click behavior in Creator 3.8.8 GUI.
+
+### Patch 7: Immediate Layer refresh
+
+The Layer badge now listens to Cocos Creator's native `scene:change-node` broadcast,
+which the built-in Hierarchy panel also uses. Only affected node IDs are invalidated
+(the visible tree is refreshed when the broadcast contains no usable UUID), so the
+previous 12-second cache TTL no longer delays Inspector Layer edits. A revision-aware
+cache discards in-flight stale responses. `scene:ready` / `scene:close` additionally
+refresh the visible labels. Native component icons and the node name/search remain
+untouched. The 12-second TTL is retained solely as a fallback if the native event is
+not emitted by a future Editor build.

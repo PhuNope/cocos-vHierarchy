@@ -82,3 +82,75 @@ test('layer rendering is strictly metadata outside rename input and native searc
   assert.match(renderer,/layerLookup\.dispose\(\)/);
   assert.match(renderer,/query-node/);
 });
+
+test('scene event invalidates only the changed node without waiting for the cache TTL', async () => {
+  const responses = new Map([
+    ['a', {layer:{value: 1 << 30}}],
+    ['b', {layer:{value: 1 << 25}}],
+  ]);
+  const calls = [];
+  const lookup = new Lookup(async uuid => { calls.push(uuid); return responses.get(uuid); },()=>{},()=>100,12000,3);
+  lookup.get('a'); lookup.get('b');
+  await tick();
+  assert.equal(lookup.get('a'),'DEFAULT');
+  assert.equal(lookup.get('b'),'UI_2D');
+  responses.set('a', {layer:{value:1 << 25}});
+  lookup.invalidate('a');
+  await tick();
+  assert.equal(lookup.get('a'), 'UI_2D');
+  assert.equal(lookup.get('b'), 'UI_2D');
+  assert.deepEqual(calls, ['a','b','a']);
+  lookup.dispose();
+});
+
+test('stale IPC replies from before scene:change-node cannot overwrite new layer', async () => {
+  let finishOld, finishNew;
+  let redraws=0;
+  const calls=[];
+  const lookup = new Lookup(uuid => {
+    calls.push(uuid);
+    return new Promise(r => { if (calls.length===1) finishOld=r; else finishNew=r; });
+  },()=>redraws++,()=>3000);
+  lookup.get('uuid-asset-node');
+  await tick();
+  lookup.invalidate('uuid-asset-node');
+  finishOld({layer:{value:1<<30}});
+  await tick();
+  assert.equal(calls.length, 2);
+  assert.equal(lookup.get('uuid-asset-node'),null);
+  finishNew({layer:{value:1<<25}});
+  await tick();
+  assert.equal(lookup.get('uuid-asset-node'),'UI_2D');
+  assert.equal(redraws,1);
+  assert.equal(calls.length,2);
+  lookup.dispose();
+});
+
+test('invalidation of a queued node uses latest revision without redundant query', async () => {
+  const releases=[];
+  let total=0;
+  const lookup=new Lookup(() => {total++;return new Promise(resolve=>releases.push(resolve));},()=>{},()=>50,12000,1);
+  lookup.get('first');lookup.get('second');
+  await tick();
+  assert.equal(total,1);
+  lookup.invalidate('second');
+  releases.shift()({layer:{value:1<<30}});
+  await tick();
+  assert.equal(total,2);
+  releases.shift()({layer:{value:1<<25}});
+  await tick();
+  assert.equal(lookup.get('second'),'UI_2D');
+  assert.equal(total,2);
+  lookup.dispose();
+});
+
+test('bulk invalidation on Scene ready re-queries only visible IDs', async () => {
+  const calls=[];
+  const lookup = new Lookup(async id => { calls.push(id);return {layer:{value:1<<30}}; },()=>{});
+  lookup.get('visible1');lookup.get('visible2');lookup.get('hidden');
+  await tick();
+  lookup.invalidateAll(['visible1','visible2','visible1']);
+  await tick();
+  assert.deepEqual(calls,['visible1','visible2','hidden','visible1','visible2']);
+  lookup.dispose();
+});

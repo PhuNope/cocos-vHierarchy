@@ -55,44 +55,72 @@ namespace VHierarchyLayers {
     private readonly cache = new Map<string, Entry>();
     private readonly queue: string[] = [];
     private readonly waiting = new Set<string>();
+    private readonly refreshAfterFlight = new Set<string>();
+    private readonly activeRequests = new Set<string>();
+    private readonly revisions = new Map<string, number>();
     private inFlight = 0;
     private disposed = false;
     constructor(private readonly request: Request, private readonly changed: () => void,
       private readonly now: () => number = () => Date.now(),
       private readonly ttl = 12000, private readonly concurrency = 3) {}
 
-    /** Never blocks a frame. Missing layer information is omitted, not guessed. */
+    /** Never blocks a frame; cache always wins over stale Vue TreeNode metadata. */
     get(uuid: string, direct?: unknown): string | null {
-      const known = direct === undefined ? null : layerName(direct);
-      if (known !== null) return known;
       if (!uuid || this.disposed) return null;
       const entry = this.cache.get(uuid);
-      if ((!entry || entry.expires <= this.now()) && !this.waiting.has(uuid) && this.queue.length < 320) {
-        this.waiting.add(uuid);
-        this.queue.push(uuid);
-        this.pump();
+      if (!entry || entry.expires <= this.now()) this.enqueue(uuid);
+      if (entry) return entry.label;
+      return direct === undefined ? null : layerName(direct);
+    }
+
+    /** React to scene:change-node instead of waiting for the 12-second TTL.
+     * A revision prevents an old, in-flight Scene query from overwriting the new Layer. */
+    invalidate(uuid: string): void {
+      if (!uuid || this.disposed) return;
+      this.revisions.set(uuid, (this.revisions.get(uuid) ?? 0) + 1);
+      this.cache.delete(uuid);
+      if (this.waiting.has(uuid)) {
+        // Queued (not yet running) requests will see the new revision already.
+        if (this.activeRequests.has(uuid)) this.refreshAfterFlight.add(uuid);
+      } else {
+        this.enqueue(uuid);
       }
-      return entry?.label ?? null;
+    }
+
+    /** Called on scene:ready/scene:close or when the native message has no UUID. */
+    invalidateAll(visibleUuids: Iterable<string>): void {
+      for (const uuid of new Set(visibleUuids)) this.invalidate(uuid);
+    }
+
+    private enqueue(uuid: string): void {
+      if (this.disposed || this.waiting.has(uuid) || this.queue.length >= 320) return;
+      this.waiting.add(uuid);
+      this.queue.push(uuid);
+      this.pump();
     }
 
     private pump(): void {
       while (!this.disposed && this.inFlight < this.concurrency && this.queue.length) {
         const uuid = this.queue.shift()!;
+        const revision = this.revisions.get(uuid) ?? 0;
         this.inFlight++;
+        this.activeRequests.add(uuid);
         void Promise.resolve().then(() => this.request(uuid)).then(data => {
-          if (this.disposed) return;
+          if (this.disposed || (this.revisions.get(uuid) ?? 0) !== revision) return;
           const label = layerName(data);
           const previous = this.cache.get(uuid);
-          // Use a shorter retry for errors or a scene that has no layer property.
           this.cache.delete(uuid); // Keep insertion order recent for bounded cache.
           this.cache.set(uuid, { label, expires: this.now() + (label === null ? 3000 : this.ttl) });
           if (this.cache.size > 1400) this.cache.delete(this.cache.keys().next().value!);
           if (previous?.label !== label) this.changed();
         }).catch(() => {
-          if (!this.disposed) this.cache.set(uuid, {label: null, expires: this.now() + 5000});
+          if (!this.disposed && (this.revisions.get(uuid) ?? 0) === revision)
+            this.cache.set(uuid, { label: null, expires: this.now() + 3000 });
         }).finally(() => {
           this.waiting.delete(uuid);
+          this.activeRequests.delete(uuid);
           this.inFlight--;
+          if (this.refreshAfterFlight.delete(uuid) && !this.disposed) this.enqueue(uuid);
           this.pump();
         });
       }
@@ -101,6 +129,9 @@ namespace VHierarchyLayers {
       this.disposed = true;
       this.queue.length = 0;
       this.cache.clear();
+      this.refreshAfterFlight.clear();
+      this.activeRequests.clear();
+      this.revisions.clear();
     }
   }
 }

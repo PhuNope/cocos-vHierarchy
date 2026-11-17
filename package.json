@@ -76,6 +76,21 @@
         "methods": [
           "toggleBookmark"
         ]
+      },
+      "scene:change-node": {
+        "methods": [
+          "nodeChanged"
+        ]
+      },
+      "scene:ready": {
+        "methods": [
+          "sceneReady"
+        ]
+      },
+      "scene:close": {
+        "methods": [
+          "sceneReady"
+        ]
       }
     }
   },

@@ -8,7 +8,7 @@ const project = fs.mkdtempSync(path.join(os.tmpdir(),'vhierarchy-test-'));
 const executed=[];
 const webContents={id:99,isDestroyed:()=>false,isLoading:()=>false,
   on:()=>{},removeListener:()=>{},
-  executeJavaScript:async js=>{executed.push(js);return js.includes("document.body?.getAttribute('name')") ? 'main' : {status:'running'};}};
+  executeJavaScript:async js=>{executed.push(js);return js.startsWith("document.body?.getAttribute('name')") ? 'main' : {status:'running'};}};
 const orig=Module._load;
 Module._load=function(id,...rest){if(id==='electron')return{BrowserWindow:{getAllWindows:()=>[{webContents}]}};return orig.call(this,id,...rest);};
 const main = require('../dist/main.js');
@@ -50,4 +50,27 @@ test('all panel actions live inside one vHierarchy submenu',()=>{
     assert.equal(item.label.startsWith('vHierarchy:'),false);
     assert.ok(manifest.contributions.messages[item.message]);
   }
+});
+
+test('native scene:change-node broadcasts refresh affected Layer without a TTL wait',async()=>{
+  const manifest=require('../package.json');
+  assert.deepEqual(manifest.contributions.messages['scene:change-node'].methods,['nodeChanged']);
+  assert.deepEqual(manifest.contributions.messages['scene:ready'].methods,['sceneReady']);
+  main.load();
+  await new Promise(resolve=>setTimeout(resolve,25));
+  executed.length=0;
+  const uuid='b204319a-288c-484a-8f60-287573a05ab6';
+  main.methods.nodeChanged({uuid, property:'layer'});
+  main.methods.nodeChanged(uuid);
+  await new Promise(resolve=>setTimeout(resolve,60));
+  const targeted=executed.filter(js=>js.includes('sceneNodeChanged?.('));
+  assert.equal(targeted.length,1,'burst of scene changes must be coalesced');
+  assert.ok(targeted[0].includes(uuid));
+  executed.length=0;
+  main.methods.sceneReady();
+  await new Promise(resolve=>setTimeout(resolve,60));
+  const refresh=executed.filter(js=>js.includes('sceneNodeChanged?.('));
+  assert.equal(refresh.length,1);
+  assert.match(refresh[0],/sceneNodeChanged\?\.\(null\)/);
+  await main.unload();
 });

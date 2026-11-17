@@ -5,6 +5,8 @@ declare const global: any;
 declare const console: { log(...args: unknown[]): void; warn(...args: unknown[]): void; error(...args: unknown[]): void };
 declare function setInterval(handler: () => void, timeout: number): unknown;
 declare function clearInterval(handle: unknown): void;
+declare function setTimeout(handler: () => void, timeout: number): unknown;
+declare function clearTimeout(handle: unknown): void;
 import { State, Options, Appearance, Feature, FEATURES, sanitizeState, sanitizeAppearance } from './core/model';
 
 const fs = require('fs');
@@ -44,6 +46,9 @@ class EditorHierarchyHost {
   private icons: Record<string, string> = {};
   private state: State = sanitizeState({});
   private readonly repo = new ProjectStateRepository();
+  private readonly dirtyNodeIds = new Set<string>();
+  private sceneFlushTimer: unknown = null;
+  private invalidateAllNodes = false;
 
   start(): void {
     this.script = ['guides.js','scene-commands.js','layers.js','scenes.js','renderer.js']
@@ -64,6 +69,10 @@ class EditorHierarchyHost {
   async stop(): Promise<void> {
     this.active = false;
     if (this.timer) clearInterval(this.timer);
+    if (this.sceneFlushTimer) clearTimeout(this.sceneFlushTimer);
+    this.sceneFlushTimer = null;
+    this.dirtyNodeIds.clear();
+    this.invalidateAllNodes = false;
     for (const c of this.clients.values()) {
       c.wc.removeListener('did-finish-load', c.loaded);
       c.wc.removeListener('destroyed', c.destroyed);
@@ -106,6 +115,50 @@ class EditorHierarchyHost {
       if (!client.attached) return Promise.resolve(null);
       return this.execute(client.wc, `window.__vHierarchy388?.${method}?.(${JSON.stringify(data ?? null)})`);
     }));
+  }
+  /** Native Hierarchy listens to the same `scene:change-node` broadcast.
+   * Scene can emit a UUID string or a node-like payload depending on the operation.
+   * Unknown signatures invalidate only currently rendered nodes, never the Scene itself. */
+  nodeChanged(...args: unknown[]): void {
+    if (!this.active) return;
+    const uuids = this.nodeUuids(args);
+    if (!uuids.length) this.invalidateAllNodes = true;
+    else for (const uuid of uuids) this.dirtyNodeIds.add(uuid);
+    this.queueSceneRefresh();
+  }
+  sceneReady(): void {
+    if (!this.active) return;
+    this.invalidateAllNodes = true;
+    this.queueSceneRefresh();
+  }
+  private nodeUuids(values: unknown[]): string[] {
+    const ids = new Set<string>();
+    const traverse = (value: unknown, depth: number): void => {
+      if (depth > 3 || ids.size >= 128) return;
+      if (typeof value === 'string') {
+        if (/^[\w-]{16,128}$/.test(value) && /[0-9]/.test(value)) ids.add(value);
+      } else if (Array.isArray(value)) {
+        for (const child of value.slice(0, 128)) traverse(child, depth + 1);
+      } else if (value && typeof value === 'object') {
+        const node = value as Record<string, unknown>;
+        for (const key of ['uuid', '_uuid', 'nodeUuid', 'nodeUUID', 'id', 'node', 'nodes']) {
+          if (key in node) traverse(node[key], depth + 1);
+        }
+      }
+    };
+    for (const value of values) traverse(value, 0);
+    return [...ids];
+  }
+  private queueSceneRefresh(): void {
+    if (this.sceneFlushTimer || !this.active) return;
+    // Coalesce a burst of native Scene changes without the 12s cache delay.
+    this.sceneFlushTimer = setTimeout(() => {
+      this.sceneFlushTimer = null;
+      const ids = this.invalidateAllNodes ? null : [...this.dirtyNodeIds];
+      this.invalidateAllNodes = false;
+      this.dirtyNodeIds.clear();
+      void this.broadcast('sceneNodeChanged', ids);
+    }, 24);
   }
   getState(): State { return JSON.parse(JSON.stringify(this.state)); }
   async setOption(key: keyof Options, value: unknown): Promise<boolean> {
@@ -158,4 +211,6 @@ export const methods = {
   toggleEnabled: (): Promise<boolean> => app.toggleEnabled(),
   refresh: (): Promise<void> => app.refresh(),
   diagnostics: (): Promise<void> => app.diagnostics(),
+  nodeChanged: (...args: unknown[]): void => app.nodeChanged(...args),
+  sceneReady: (): void => app.sceneReady(),
 };

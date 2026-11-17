@@ -101,6 +101,11 @@
         "methods": [
           "removeIcon"
         ]
+      },
+      "refresh-material-catalog": {
+        "methods": [
+          "refreshMaterialCatalog"
+        ]
       }
     }
   },

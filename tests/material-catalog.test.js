@@ -1,6 +1,6 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {MATERIAL_SYMBOL_NAMES,isMaterialIcon,filterIconNames}=require('../dist/core/material-catalog.js');
+const {MATERIAL_SYMBOL_NAMES,isMaterialIcon,filterIconNames,parseMaterialCodepoints,parseMaterialCache,setMaterialCatalog}=require('../dist/core/material-catalog.js');
 const {sanitizeAppearance,isValidAppearance,sanitizeState,resolveAppearance}=require('../dist/core/model.js');
 const node='abCDefghij+klmn/opqrst';
 const parent='12345678-1234-1234-1234-123456789012';
@@ -43,4 +43,28 @@ test('recursive Material icon inherits its tint and can be overridden by child',
   assert.equal(resolveAppearance(node,[parent],appearances).iconColor,'#11bb22');
   appearances[node]={icon:'material:star'};
   assert.equal(resolveAppearance(node,[parent],appearances).iconColor,undefined);
+});
+
+
+test('official codepoints parser accepts full names and rejects invalid or partial input',()=>{
+  const entries=Array.from({length:1350},(_,i)=>`icon_test_${i} ${(0xe000+i).toString(16)}`);
+  entries.push('account_tree f1c8');
+  const result=parseMaterialCodepoints(entries.join('\n'));
+  assert.equal(result.length,1351);
+  assert.ok(result.includes('account_tree'));
+  assert.deepEqual(parseMaterialCodepoints('home e88a'),[]);
+  assert.deepEqual(parseMaterialCodepoints('a'.repeat(260000)),[]);
+  assert.deepEqual(parseMaterialCache(['home','folder']),[]);
+  assert.deepEqual(parseMaterialCache([...result,'<script>']),[]);
+  assert.deepEqual(parseMaterialCache(result),result);
+});
+test('official catalog whitelist accepts verified new icons but not arbitrary names',()=>{
+  assert.equal(isMaterialIcon('material:new_official_icon_2026'),false);
+  const full=[...Array.from({length:1200},(_,i)=>`official_${i}`),'new_official_icon_2026'];
+  setMaterialCatalog(parseMaterialCache(full));
+  assert.equal(isMaterialIcon('material:new_official_icon_2026'),true);
+  assert.equal(isValidAppearance({icon:'material:new_official_icon_2026',iconColor:'#123456'}),true);
+  assert.equal(isMaterialIcon('material:https://evil.test'),false);
+  setMaterialCatalog([]);
+  assert.equal(isMaterialIcon('material:new_official_icon_2026'),false);
 });

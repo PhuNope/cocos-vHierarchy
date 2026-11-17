@@ -9,12 +9,13 @@ declare function clearInterval(handle: unknown): void;
 declare function setTimeout(handler: () => void, timeout: number): unknown;
 declare function clearTimeout(handle: unknown): void;
 import { State, Options, Appearance, Feature, FEATURES, sanitizeState, sanitizeAppearance, isValidAppearance, isNodeId } from './core/model';
-import { MATERIAL_SYMBOL_NAMES } from './core/material-catalog';
+import { MATERIAL_SYMBOL_NAMES, MATERIAL_CODEPOINTS_URL, MAX_CATALOG_BYTES, parseMaterialCache, parseMaterialCodepoints, setMaterialCatalog } from './core/material-catalog';
 import { CustomIcon, MAX_CUSTOM_ICONS, MAX_ICON_PNG_BYTES, isCustomIcon, isValidPng, cleanIconName } from './core/custom-icons';
 
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const https = require('https');
 const { BrowserWindow } = require('electron');
 interface WebContents {
   id: number; isDestroyed(): boolean; isLoading(): boolean;
@@ -49,6 +50,9 @@ class EditorHierarchyHost {
   private script = '';
   private icons: Record<string, string> = {};
   private state: State = sanitizeState({});
+  private materialSymbols: string[] = [...MATERIAL_SYMBOL_NAMES];
+  private materialCatalogFull = false;
+  private materialCatalogRequest: Promise<boolean> | null = null;
   private readonly repo = new ProjectStateRepository();
   private readonly dirtyNodeIds = new Set<string>();
   private sceneFlushTimer: unknown = null;
@@ -64,11 +68,16 @@ class EditorHierarchyHost {
         this.icons[name]='data:image/svg+xml;base64,'+fs.readFileSync(path.join(iconDir, name+'.svg')).toString('base64');
       } catch(err) { console.warn('[vHierarchy] Missing icon asset',name,String(err)); }
     }
+    this.materialSymbols = [...MATERIAL_SYMBOL_NAMES];
+    this.materialCatalogFull = false;
+    setMaterialCatalog([]);
+    this.loadCachedMaterialCatalog();
     this.state = this.repo.load();
     this.loadCustomIconAssets();
     this.active = true;
     this.poll();
     this.timer = setInterval(() => this.poll(), 1700);
+    void this.refreshMaterialCatalog();
     console.log('[vHierarchy] 0.1.0 loaded');
   }
   async stop(): Promise<void> {
@@ -154,6 +163,83 @@ class EditorHierarchyHost {
     return true;
   }
 
+  /** Cached catalog is loaded synchronously *before* project appearance
+   * validation. Otherwise a previously selected Material icon could be lost
+   * during startup if the network is offline. */
+  private catalogCacheFile(): string | null {
+    const project: string | undefined = global.Editor?.Project?.path;
+    return project && path.isAbsolute(project)
+      ? path.join(project, 'settings', 'vHierarchy-material-symbols.json') : null;
+  }
+  private loadCachedMaterialCatalog(): void {
+    const cache = this.catalogCacheFile();
+    if (!cache) return;
+    try {
+      const names = parseMaterialCache(JSON.parse(fs.readFileSync(cache, 'utf8')));
+      if (!names.length) return;
+      this.materialSymbols = names;
+      this.materialCatalogFull = true;
+      setMaterialCatalog(names);
+    } catch { /* No cache on first run; keep curated fallback. */ }
+  }
+  /** The official codepoints index (~80KB) is fetched as plain text over HTTPS.
+   * Limit bytes/time, reject invalid or partial responses, and never execute it.
+   * A working cache is kept on transient network failures. */
+  private fetchMaterialCodepoints(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const request = https.get(MATERIAL_CODEPOINTS_URL, { timeout: 9000 }, (response: any) => {
+        if (response.statusCode !== 200) {
+          response.resume(); reject(new Error('Google catalog HTTP ' + response.statusCode)); return;
+        }
+        const chunks: any[] = [];
+        let count = 0;
+        response.on('data', (chunk: any) => {
+          count += chunk.length;
+          if (count > MAX_CATALOG_BYTES) {
+            request.destroy(new Error('Google catalog exceeds size limit'));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        response.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        response.on('error', reject);
+      });
+      request.on('timeout', () => request.destroy(new Error('Google catalog request timed out')));
+      request.on('error', reject);
+    });
+  }
+  refreshMaterialCatalog(): Promise<boolean> {
+    if (this.materialCatalogRequest) return this.materialCatalogRequest;
+    const work = (async (): Promise<boolean> => {
+      try {
+        const names = parseMaterialCodepoints(await this.fetchMaterialCodepoints());
+        if (!names.length) throw new Error('Invalid or incomplete Google catalog');
+        if (!this.active) return false;
+        const cache = this.catalogCacheFile();
+        if (cache) {
+          try {
+            fs.mkdirSync(path.dirname(cache), {recursive:true});
+            const temp = cache + '.tmp';
+            fs.writeFileSync(temp, JSON.stringify(names) + '\n', 'utf8');
+            fs.renameSync(temp, cache);
+          } catch (error) { console.warn('[vHierarchy] Could not cache Material Symbols list', String(error)); }
+        }
+        this.materialSymbols = names;
+        this.materialCatalogFull = true;
+        setMaterialCatalog(names);
+        await this.broadcast('setMaterialSymbols', {names, full:true});
+        console.log('[vHierarchy] Google Material Symbols catalog ready:', names.length, 'icons');
+        return true;
+      } catch (error) {
+        console.warn('[vHierarchy] Google icon catalog unavailable; keeping cached/local names', String(error));
+        return false;
+      }
+    })();
+    this.materialCatalogRequest = work;
+    void work.finally(() => { if (this.materialCatalogRequest === work) this.materialCatalogRequest = null; });
+    return work;
+  }
+
   private poll(): void {
     if (!this.active) return;
     for (const win of BrowserWindow.getAllWindows()) {
@@ -180,7 +266,7 @@ class EditorHierarchyHost {
       // Only the main Cocos Editor renderer may own the Hierarchy panel.
       const probe = await this.execute(client.wc, "document.body?.getAttribute('name') === 'main' ? 'main' : 'other'");
       if (probe !== 'main') return;
-      const result = await this.execute(client.wc, `${this.script}\n;window.__vHierarchy388?.setIcons(${JSON.stringify(this.icons)});window.__vHierarchy388?.setMaterialSymbols(${JSON.stringify(MATERIAL_SYMBOL_NAMES)});window.__vHierarchy388?.applyState(${JSON.stringify(this.state)});({status:'running'});`);
+      const result = await this.execute(client.wc, `${this.script}\n;window.__vHierarchy388?.setIcons(${JSON.stringify(this.icons)});window.__vHierarchy388?.setMaterialSymbols(${JSON.stringify({names:this.materialSymbols,full:this.materialCatalogFull})});window.__vHierarchy388?.applyState(${JSON.stringify(this.state)});({status:'running'});`);
       if (result?.status === 'running') client.attached = true;
     } finally { client.inFlight = false; }
   }
@@ -293,6 +379,7 @@ export const methods = {
   toggleEnabled: (): Promise<boolean> => app.toggleEnabled(),
   refresh: (): Promise<void> => app.refresh(),
   diagnostics: (): Promise<void> => app.diagnostics(),
+  refreshMaterialCatalog: (): Promise<boolean> => app.refreshMaterialCatalog(),
   nodeChanged: (...args: unknown[]): void => app.nodeChanged(...args),
   sceneReady: (): void => app.sceneReady(),
 };

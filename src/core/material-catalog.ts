@@ -1,9 +1,10 @@
 /**
- * Curated ligature names for Google's Material Symbols Outlined family.
- * Google Fonts serves the font only when the user opens the icon palette or
- * when a node with a Material icon is rendered. The catalog itself is local:
- * search does not require Google APIs, keys or network access.
- * Source: https://fonts.google.com/icons (Apache License 2.0).
+ * Material Symbols Outlined catalog. The 184 names below are the bundled,
+ * offline fallback; all names come from Google's official codepoints index.
+ * https://github.com/google/material-design-icons/tree/master/variablefont
+ * Apache-2.0. The complete index is downloaded by the Editor main process,
+ * validated, and cached in the active project's settings directory.
+ * No online JavaScript or image files are executed by the extension.
  */
 export const MATERIAL_SYMBOL_NAMES = [
   'account_circle','account_tree','add','add_box','add_circle','alarm','all_inclusive','analytics',
@@ -31,8 +32,40 @@ export const MATERIAL_SYMBOL_NAMES = [
   'visibility_off','volume_up','warning','widgets','wifi','work','workspace_premium','zoom_in',
 ] as const;
 
-const materialNames: ReadonlySet<string> = new Set(MATERIAL_SYMBOL_NAMES);
 export const MATERIAL_ICON_PREFIX = 'material:';
+export const MATERIAL_CODEPOINTS_URL = 'https://raw.githubusercontent.com/google/material-design-icons/master/variablefont/MaterialSymbolsOutlined%5BFILL%2CGRAD%2Copsz%2Cwght%5D.codepoints';
+export const MAX_CATALOG_BYTES = 256 * 1024;
+export const MAX_CATALOG_NAMES = 7000;
+const NAME = /^[a-z0-9_]{2,48}$/;
+let materialNames: ReadonlySet<string> = new Set(MATERIAL_SYMBOL_NAMES);
+
+/** Strict parsing: never trust response content or cache as executable data. */
+export function parseMaterialCodepoints(data: unknown): string[] {
+  if (typeof data !== 'string' || data.length > MAX_CATALOG_BYTES) return [];
+  const found = new Set<string>();
+  for (const line of data.split(/\r?\n/)) {
+    const match = /^([a-z0-9_]{2,48})\s+([0-9a-f]{4,6})$/.exec(line.trim());
+    if (match) found.add(match[1]);
+    if (found.size > MAX_CATALOG_NAMES) return [];
+  }
+  return found.size >= 1000 ? [...found].sort() : [];
+}
+
+/** Validate the cached JSON list and permit no arbitrary names. */
+export function parseMaterialCache(data: unknown): string[] {
+  if (!Array.isArray(data) || data.length < 1000 || data.length > MAX_CATALOG_NAMES) return [];
+  const names = new Set<string>();
+  for (const name of data) {
+    if (typeof name !== 'string' || !NAME.test(name)) return [];
+    names.add(name);
+  }
+  return names.size >= 1000 ? [...names].sort() : [];
+}
+
+/** Configure the exact whitelist before reading persisted appearances. */
+export function setMaterialCatalog(names: readonly string[]): void {
+  materialNames = new Set([...MATERIAL_SYMBOL_NAMES, ...names.filter(name => NAME.test(name))]);
+}
 export function isMaterialIcon(id: string): boolean {
   return id.startsWith(MATERIAL_ICON_PREFIX) && materialNames.has(id.slice(MATERIAL_ICON_PREFIX.length));
 }

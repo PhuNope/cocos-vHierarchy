@@ -4,13 +4,28 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const Module = require('node:module');
+const {EventEmitter} = require('node:events');
+let officialCatalogMock = null;
+const mockedHttps = {get: (_url, _options, onResponse)=>{
+  const request = new EventEmitter();
+  request.destroy = error => process.nextTick(()=>request.emit('error',error));
+  process.nextTick(()=>{
+    if (officialCatalogMock === null) { request.emit('error',new Error('offline test mode')); return; }
+    const response = new EventEmitter();
+    response.statusCode=200; response.resume=()=>{};
+    onResponse(response);
+    response.emit('data',Buffer.from(officialCatalogMock));
+    response.emit('end');
+  });
+  return request;
+}};
 const project = fs.mkdtempSync(path.join(os.tmpdir(),'vhierarchy-test-'));
 const executed=[];
 const webContents={id:99,isDestroyed:()=>false,isLoading:()=>false,
   on:()=>{},removeListener:()=>{},
   executeJavaScript:async js=>{executed.push(js);return js.startsWith("document.body?.getAttribute('name')") ? 'main' : {status:'running'};}};
 const orig=Module._load;
-Module._load=function(id,...rest){if(id==='electron')return{BrowserWindow:{getAllWindows:()=>[{webContents}]}};return orig.call(this,id,...rest);};
+Module._load=function(id,...rest){if(id==='electron')return{BrowserWindow:{getAllWindows:()=>[{webContents}]}};if(id==='https')return mockedHttps;return orig.call(this,id,...rest);};
 const main = require('../dist/main.js');
 Module._load=orig;
 global.Editor={Project:{path:project}};
@@ -122,5 +137,28 @@ test('Cocos node changes with compressed UUIDs invalidate the right Layer label'
   const refresh=executed.filter(js=>js.includes('sceneNodeChanged?.('));
   assert.equal(refresh.length,1);
   assert.ok(refresh[0].includes(compressed));
+  await main.unload();
+});
+
+
+test('full official Material catalog is downloaded, validated, broadcast, and cached for restart', async()=>{
+  const lines=Array.from({length:1230},(_,i)=>`symbol_demo_${i} ${ (0xe000+i).toString(16) }`);
+  lines.push('new_material_symbol_2026 f9001');
+  officialCatalogMock=lines.join('\n');
+  main.load();
+  await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(await main.methods.refreshMaterialCatalog(),true);
+  const files=JSON.parse(fs.readFileSync(path.join(project,'settings','vHierarchy-material-symbols.json'),'utf8'));
+  assert.ok(files.length>=1200);
+  assert.ok(files.includes('new_material_symbol_2026'));
+  const targeted=executed.filter(js=>js.includes('.setMaterialSymbols?.('));
+  assert.ok(targeted.some(js=>js.includes('new_material_symbol_2026')));
+  const node='abCDefghij+klmn/opqrst';
+  assert.equal(await main.methods.setAppearance(node,{icon:'material:new_material_symbol_2026',iconColor:'#31acff'}),true);
+  await main.unload();
+  officialCatalogMock=null;
+  main.load();
+  await new Promise(resolve=>setTimeout(resolve,12));
+  assert.equal(main.methods.getState().appearances[node].icon,'material:new_material_symbol_2026');
   await main.unload();
 });

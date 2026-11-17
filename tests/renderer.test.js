@@ -131,7 +131,7 @@ test('palette settings expose live preview and persist gradient/saturation/brigh
 
 test('Google icon palette uses searchable allowlisted catalog with independent tint controls',()=>{
   assert.match(renderer,/GOOGLE_MATERIAL_CSS = 'https:\/\/fonts\.googleapis\.com\/css2\?/);
-  assert.match(renderer,/setMaterialSymbols\(names\)/);
+  assert.match(renderer,/setMaterialSymbols\(data\)/);
   assert.match(renderer,/search\.type = 'search'/);
   assert.match(renderer,/search\.addEventListener\('input', drawIconGrid\)/);
   assert.match(renderer,/key\.toLowerCase\(\)\.includes\(query\)/);

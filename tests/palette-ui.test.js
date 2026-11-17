@@ -43,7 +43,7 @@ function openPalette(appearance = {}, parents = {}, ancestorIds = []) {
     state,
     VHierarchyColors: colors,
     PALETTE: ['#777d89','#b35e68','#b48e4f','#a9a857','#61a886','#5d94b5','#737cc2','#a36bb4','#b56e9d'],
-    ICONS: [], materialSymbols: [], MATERIAL_PREFIX: 'material:', iconAssets: {},
+    ICONS: [], materialSymbols: [], materialCatalogFull: false, materialPaletteRefresh: null, MATERIAL_PREFIX: 'material:', iconAssets: {},
     document: { createTextNode: text => text },
     el: (tag, cssClass = '', text = '') => new FakeElement(tag, cssClass, text),
     btn: (caption, title, callback, cssClass = '') => {

@@ -12,7 +12,7 @@
   interface State { options: Opts; appearances: Record<string, Appearance>; bookmarks: Bookmark[]; customIcons: CustomIcon[]; }
   interface TreeDump { uuid?: string; name?: string; depth?: number; parent?: string; active?: boolean; locked?: boolean; readonly?: boolean; isScene?: boolean; components?: Array<{ type?: string; extends?: string[] }>; prefab?: { state?: number }; layer?: unknown; }
   interface Item { guide?: { group: Item[]; index: number; result: VHierarchyGuides.Result }; ancestorIds?: string[]; row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; nameEl: HTMLElement | null; depth: number; padding: number; margin: number; anchor: number; searching: boolean; }
-  interface Hook { refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(names: string[]): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
+  interface Hook { refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
@@ -253,6 +253,9 @@
   const appearanceWrites = new Map<string, Promise<void>>();
   let iconAssets: Record<string, string> = {};
   let materialSymbols: string[] = [];
+  let materialSymbolsSet = new Set<string>();
+  let materialCatalogFull = false;
+  let materialPaletteRefresh: (() => void) | null = null;
   let materialFontStatus: 'idle'|'loading'|'ready'|'error' = 'idle';
   let googleFontLink: HTMLLinkElement | null = null;
   function materialName(key: string): string { return key.slice(MATERIAL_PREFIX.length); }
@@ -529,7 +532,7 @@
     }
     const iconEl = item.drag.querySelector(':scope > .vh-icon') as HTMLElement | null;
     const displayIcon = enabled && inherited.icon ? inherited.icon : '';
-    if (displayIcon.startsWith(MATERIAL_PREFIX) && materialSymbols.includes(materialName(displayIcon))) {
+    if (displayIcon.startsWith(MATERIAL_PREFIX) && materialSymbolsSet.has(materialName(displayIcon))) {
       requestMaterialFont();
       if (iconEl && !iconEl.classList.contains('vh-material-symbol')) iconEl.remove();
       const marker=(item.drag.querySelector(':scope > .vh-icon.vh-material-symbol') as HTMLElement | null)
@@ -843,6 +846,7 @@
   }
   function closePopup(): void {
     popupCleanup?.(); popupCleanup=null;
+    materialPaletteRefresh=null;
     pop?.remove(); pop=null;
   }
   function popup(title: string, x?: number, y?: number): HTMLElement {
@@ -939,7 +943,7 @@
       });
       const candidates=filtered.slice(0,72);
       if(current.icon && filtered.includes(current.icon) && !candidates.includes(current.icon))candidates.unshift(current.icon);
-      iconCount.textContent=`${filtered.length} matching icons · showing ${candidates.length} · Custom icons work offline; Google font needs internet`;
+      iconCount.textContent=`${filtered.length} matching icons · showing ${candidates.length} · ${materialCatalogFull ? 'Full Google catalog loaded' : 'Google catalog loading / offline fallback'} · Glyph font requires internet`; 
       icons.replaceChildren();
       for(const key of candidates) {
         const label=state.customIcons?.find(icon=>icon.id===key)?.name || key;
@@ -967,8 +971,23 @@
       if(!candidates.length)icons.append(el('p','vh-footer','No icons match your search.'));
     };
     search.addEventListener('input',drawIconGrid);
-    wrap.append(search,iconCount,icons);
+    const refreshGoogle=btn('Refresh Google icon list','Download the complete official Material Symbols catalog (requires internet)',()=>{
+      refreshGoogle.disabled=true;
+      iconCount.textContent='Checking Google Material Symbols catalog…';
+      void Promise.resolve(req('cocos-vhierarchy','refresh-material-catalog')).then((ok:boolean)=>{
+        if(!ok) iconCount.textContent='Could not refresh: offline or Google catalog unavailable. Local icons remain accessible.';
+      }).catch((error:unknown)=>{
+        iconCount.textContent='Could not refresh Google icon list.';
+        logError('material-catalog',error);
+      }).finally(()=>{refreshGoogle.disabled=false;});
+    });
+    wrap.append(search,iconCount,refreshGoogle,icons);
     drawIconGrid();
+    materialPaletteRefresh=()=>{
+      const keys=[...ICONS,...(state.customIcons || []).map(icon=>icon.id),...materialSymbols.map(name=>MATERIAL_PREFIX+name)];
+      allIcons.splice(0,allIcons.length,...keys);
+      drawIconGrid();
+    };
     search.focus();
     const importFile=el('input','vh-import-file') as HTMLInputElement;
     importFile.type='file'; importFile.accept='.png,.webp,.svg,image/png,image/webp,image/svg+xml';
@@ -1136,7 +1155,15 @@
   }
   function refresh(): void {schedule();}
   function setIcons(next: Record<string,string>): void { iconAssets={...next};schedule(); }
-  function setMaterialSymbols(names: string[]): void { materialSymbols=names.filter(name=>/^[a-z0-9_]{2,48}$/.test(name));schedule(); }
+  function setMaterialSymbols(data: {names:string[];full:boolean} | string[]): void {
+    const names=Array.isArray(data) ? data : data?.names;
+    if (!Array.isArray(names)) return;
+    materialSymbols=[...new Set(names.filter(name=>typeof name==='string' && /^[a-z0-9_]{2,48}$/.test(name)))].slice(0,7000);
+    materialSymbolsSet=new Set(materialSymbols);
+    materialCatalogFull=!Array.isArray(data) && data.full===true;
+    materialPaletteRefresh?.();
+    schedule();
+  }
   function applyState(input: State): void { if (!input?.options) return; state=input; schedule(); }
   function stats(): unknown { return { version:'0.1.0',scans,panelCount,visibleRows:views.length,vueRows,hasActiveNode:!!lastHovered?.uuid,lastError }; }
   function stop(): void {

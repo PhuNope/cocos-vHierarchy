@@ -1,3 +1,11 @@
+## Patch 18 — Full Google Material Symbols index (still 0.1.0)
+
+The Palette now loads **the complete official Material Symbols Outlined list** instead of limiting search to the 184-name fallback (Google's codepoints index currently contains 4,304 entries). This catalog is plain-text metadata from Google's [open-source repository](https://github.com/google/material-design-icons/tree/master/variablefont) under Apache-2.0. The extension validates icon names before use, does not execute downloaded content and rejects incomplete/oversized catalogs. Each successful download is cached in `settings/vHierarchy-material-symbols.json` for future launches; the cache is read *before* saved node appearances, preserving icon assignments when offline. If the download fails, the 184-name fallback plus 36 local SVGs and project-imported PNGs remain available. The Palette includes a **Refresh Google icon list** button.
+
+The *icon name index* is cached offline, but **Material Symbols glyph rendering still requires Google Fonts** to load successfully (or a previously cached web font). For an entirely offline experience, use bundled SVGs or imported icons. The full Google icon font is deliberately **not bundled** in the plugin ZIP. The initial catalog requires an HTTPS connection to `raw.githubusercontent.com`; font rendering connects to `fonts.googleapis.com`/`fonts.gstatic.com`. The picker renders at most 72 results at once for responsiveness and supports searching names among all indexed icons. No API key is needed. Material Symbols is the current Google icon family; the deprecated classic Material Icons set is not imported in this patch. Google provides the icons under Apache License 2.0; see [license](https://github.com/google/material-design-icons/blob/master/LICENSE).
+
+**Test:** Open Palette (Alt + right click), choose **Refresh Google icon list** if needed, search uncommon names such as `zoom_out_map` or `wifi_calling_3`, select an icon and tint it, then restart Creator and verify the icon remains assigned. Test offline after one successful catalog download. This patch retains `0.1.0` and `editor >=3.8.2`. GUI behavior requires verification in Cocos Creator 3.8.8.
+
 # vHierarchy for Cocos Creator
 
 **Version:** `0.1.0` (development/test build; no Git tag or GitHub Release)  

@@ -152,3 +152,16 @@ Curated searchable Material Symbols Outlined catalog with official Google Fonts 
 - [x] Custom icon name search, per-node tint and recursive behavior, confirmation-based deletion with assignment cleanup, size/dimension/input sanitization.
 - [x] Main process tests for byte validation, persistence, deduplication, deletion and invalid IDs, plus renderer SVG validation and Palette wiring tests.
 - [ ] Test actual Creator 3.8.8 GUI, file picker, Blob CSP behavior, and import/reload on Windows. The 184 Google Material Symbols continue to require a network font; offline import is their alternative, not a claim that all Google icons are bundled.
+
+
+### M2 — Patch 18: full Google Material Symbols index
+
+- [x] Download and validate the *entire* official Material Symbols Outlined codepoints index via HTTPS, with bounds and timeout.
+- [x] Cache all indexed icon names per project; restore whitelist before reading user appearance metadata.
+- [x] Palette search over loaded names, limit visible tiles to 72, refresh list without closing Palette.
+- [x] Add retry action and offline fallback; support existing icon tint and recursive assignment.
+- [x] Mock official response in tests to verify catalog persistence, safe icon validation and restart.
+- [ ] Test networking, Material font loading, cache and visual rendering in Cocos Creator 3.8.8 on Windows.
+- [ ] Optional future: full local SVG/bitmap icon pack independent of Google font service, classic Material Icons and style selector.
+
+**Important:** Only the icon *index* is cached. Glyph font is still served by Google Fonts and not included in the distributed plugin. The Google source repository and documentation grant Apache-2.0 use.

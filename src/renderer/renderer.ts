@@ -73,20 +73,31 @@
     .vh-icon { position:absolute; right:92px; top:2px; z-index:1; width:15px; height:15px; pointer-events:none; object-fit:contain; }
     .vh-emoji { width:auto; font-size:12px; line-height:15px; }
 
-    /* Native lock was at left:6px and overlapped the clickable ancestor rail.
-       Reserve a dedicated 20px left gutter while leaving native arrow/icon spacing intact. */
+    /* Keep Cocos' own right-side component icon untouched. The Active checkbox
+       participates in flex layout BEFORE that icon, and only appears on hover. */
     .tree[data-vh-lock-gutter] { padding-left:20px !important; }
     .tree[data-vh-lock-gutter] > .tree-node > .drag-item > ui-icon.lock {
-      left:-18px !important; width:16px; height:20px; line-height:20px;
-      text-align:center; z-index:3; pointer-events:auto;
+      display:inline-flex !important; align-items:center; justify-content:center;
+      left:-20px !important; width:22px; height:20px; top:0;
+      z-index:4; opacity:0; pointer-events:auto !important;
     }
-    .vh-active { position:absolute; right:6px; top:3px; width:14px; height:14px;
-      z-index:2; display:block; accent-color:#70b58a; cursor:pointer; margin:0;
-      opacity:.78; }
+    /* Hoverable lock remains in the hit-test tree even when visually hidden.
+       Its 22px hit target overlaps the row by 2px to bridge the gutter gap. */
+    .tree[data-vh-lock-gutter] > .tree-node:hover > .drag-item > ui-icon.lock,
+    .tree[data-vh-lock-gutter] > .tree-node > .drag-item > ui-icon.lock:hover,
+    .tree[data-vh-lock-gutter] > .tree-node > .drag-item > ui-icon.lock[locked='true'] { opacity:1; }
+    .tree[data-vh-lock-gutter] > .tree-node > .drag-item > ui-icon.lock[inside-locked] { opacity:.55; }
+    .vh-active {
+      position:relative; flex:0 0 14px; align-self:center; width:14px; height:14px;
+      z-index:2; accent-color:#70b58a; cursor:pointer; margin:0 4px 0 5px;
+      visibility:hidden; opacity:0; pointer-events:none;
+    }
     .tree-node:hover > .drag-item > .vh-active,
-    .tree-node[is-active='false'] > .drag-item > .vh-active { opacity:1; }
+    .tree-node:focus-within > .drag-item > .vh-active {
+      visibility:visible; opacity:1; pointer-events:auto;
+    }
     .vh-active[disabled] { opacity:.45; cursor:wait; }
-    .tree-node[data-vh-active-control] > .drag-item > ui-rename-input.name { margin-right:22px; }
+    /* Keep native ui-icon[default=asset][value=typescript] right aligned. */
     /* Layer metadata is a separate sibling; never append it to ui-rename-input or
        modify the Vue node.name (both native and toolbar search use that name). */
     .tree-node[data-vh-has-layer] > .drag-item > ui-rename-input.name {
@@ -106,7 +117,16 @@
     .vh-layer { position:fixed; inset:0; z-index:100000; pointer-events:none; }
     .vh-pop { pointer-events:auto; position:fixed; z-index:100001; background:#252b32; color:#e4eaf2; border:1px solid #657080; border-radius:7px; box-shadow:0 10px 30px #0009; min-width:216px; max-width:330px; padding:11px; font:12px Arial,sans-serif; }
     .vh-pop { max-height: min(85vh, 640px); overflow:auto; }
-    .vh-pop h4 { margin:0 0 8px; font-size:13px; }
+    .vh-pop h4 { margin:0 26px 8px 0; font-size:13px; }
+    .vh-pop-close { position:absolute; right:6px; top:5px; border:0; border-radius:4px;
+      background:transparent; color:inherit; cursor:pointer; padding:2px 7px; font:18px/19px Arial,sans-serif; }
+    .vh-pop-close:hover { background:#ffffff22; }
+    .vh-scene-list { display:flex; flex-direction:column; align-items:stretch; gap:3px; margin:7px 0; max-height:330px; overflow:auto; }
+    .vh-scene-item { text-align:left; border:1px solid transparent; background:transparent; color:inherit;
+      border-radius:4px; padding:6px; cursor:pointer; font:12px Arial,sans-serif; }
+    .vh-scene-item:hover { background:#ffffff16; border-color:#ffffff23; }
+    .vh-scene-status { font-size:11px; color:#a8b4c1; white-space:normal; }
+    .vh-scene-status[data-error='true'] { color:#f2a5a5; }
     .vh-pop label { display:flex; gap:5px; align-items:center; margin:5px 0; cursor:pointer; }
     .vh-pop input[type=checkbox] { accent-color:#68a4ff; }
     .vh-grid { display:grid; grid-template-columns:repeat(9, 1fr); gap:4px; margin:7px 0; }
@@ -132,6 +152,7 @@
   let searchText = '';
   let views: Item[] = [];
   let pop: HTMLElement | null = null;
+  let popupCleanup: (() => void) | null = null;
   let rootHost: Document | ShadowRoot = document;
   let listRoot: HTMLElement | null = null;
   let lastError = '';
@@ -366,6 +387,7 @@
       if (marker.textContent !== displayIcon) marker.textContent = displayIcon;
     } else iconEl?.remove();
     drawLayer(item);
+    // Never hide or replace Cocos' own native component icon on the right.
     // Component minimap has been removed by product request; clean up remnants
     // from any previously injected renderer instance.
     item.drag.querySelector(':scope > .vh-components')?.remove();
@@ -388,6 +410,14 @@
           const clicked = views.find(v=>v.row===checkbox!.closest('.tree-node'));
           if (clicked) void toggleActive(clicked);
         });
+        item.drag.appendChild(checkbox);
+      }
+      // Native component indicator is the last, right-aligned icon in Cocos' template.
+      // Insert before it so the two controls never overlap at any panel width.
+      const nativeComponent = item.drag.querySelector(':scope > ui-icon[default="asset"][value="typescript"]');
+      if (nativeComponent) {
+        if (checkbox.nextElementSibling !== nativeComponent) item.drag.insertBefore(checkbox, nativeComponent);
+      } else if (checkbox !== item.drag.lastElementChild) {
         item.drag.appendChild(checkbox);
       }
       if (!VHierarchySceneCommands.isPending(item.uuid)) checkbox.checked = item.node?.active !== false;
@@ -594,15 +624,36 @@
     try { const ok=await req('cocos-vhierarchy','set-appearance',item.uuid,next); if(!ok)throw new Error('Rejected appearance'); }
     catch(e){logError('appearance',e);}
   }
+  function closePopup(): void {
+    popupCleanup?.(); popupCleanup=null;
+    pop?.remove(); pop=null;
+  }
   function popup(title: string, x?: number, y?: number): HTMLElement {
-    pop?.remove();
+    closePopup();
     style(rootHost);
     const wrap=el('div','vh-pop');
-    wrap.append(el('h4','',title));
+    const heading=el('h4','',title);
+    const close=btn('×','Close vHierarchy popup',()=>closePopup(),'vh-pop-close');
+    close.setAttribute('aria-label','Close');
+    wrap.append(heading,close);
     (rootHost as Document | ShadowRoot).appendChild(wrap);
-    wrap.style.left=`${Math.min(window.innerWidth-260, Math.max(8,x ?? window.innerWidth/2-130))}px`;
-    wrap.style.top=`${Math.min(window.innerHeight-300, Math.max(8,y ?? 68))}px`;
+    wrap.style.left=`${Math.max(8,Math.min(window.innerWidth-260,x ?? window.innerWidth/2-130))}px`;
+    wrap.style.top=`${Math.max(8,Math.min(window.innerHeight-300,y ?? 68))}px`;
     pop=wrap;
+    const keydown=(event:KeyboardEvent):void=>{
+      if(event.key==='Escape') {event.preventDefault();event.stopPropagation();closePopup();}
+    };
+    const outside=(event:PointerEvent):void=>{
+      if(!event.composedPath().includes(wrap)) closePopup();
+    };
+    document.addEventListener('keydown',keydown,true);
+    // Defer registering outside-click handling until after the toolbar click completes.
+    // pointerdown triggers before click; registration now is safe for the current click.
+    document.addEventListener('pointerdown',outside,true);
+    popupCleanup=()=>{
+      document.removeEventListener('keydown',keydown,true);
+      document.removeEventListener('pointerdown',outside,true);
+    };
     return wrap;
   }
   function showPalette(item: Item,x: number,y: number): void {
@@ -640,30 +691,55 @@
     const modes=el('div');modes.append(el('span','','Guide style: '));
     for(const mode of ['tree','minimal'] as const) modes.append(btn(mode,mode,()=>{void req('cocos-vhierarchy','set-option','guideMode',mode).catch(e=>logError('guide mode',e));}));
     wrap.append(modes,el('p','vh-footer','Color/icon: Alt + right-click a Hierarchy node. Settings are saved per project.'));
-    wrap.append(btn('Close','Close settings',()=>{pop?.remove();pop=null;}));
+    wrap.append(btn('Close','Close settings',()=>closePopup()));
   }
   async function showScenes(): Promise<void> {
-    const wrap=popup('Open Scene');wrap.append(el('p','vh-footer','Loading scenes can discard unsaved changes. Save first.'));
-    try {
-      const scenes=await req('asset-db','query-assets',{type:'cc.SceneAsset'});
-      if(!Array.isArray(scenes))throw new Error('AssetDB scene query unavailable');
-      for(const asset of scenes.slice(0,30)) {
-        if(typeof asset.uuid!=='string')continue;
-        wrap.append(btn('▤ '+String(asset.name||asset.url||'Scene'),String(asset.url||''),()=>{
-          if(!window.confirm('Save your current Scene before switching. Continue?'))return;
-          editor()?.Message?.send?.('scene','open-scene',asset.uuid);
-          wrap.remove();pop=null;
-        }));
-      }
-      if(!scenes.length)wrap.append(el('p','','No scenes found.'));
-    } catch(e){wrap.append(el('p','',`Scene selector unsupported: ${String(e)}`));}
+    const wrap=popup('Open Scene');
+    wrap.append(el('p','vh-footer','Only imported .scene assets under db://assets. Save changes before switching.'));
+    const status=el('p','vh-scene-status','Loading scenes…');
+    status.setAttribute('role','status');
+    const list=el('div','vh-scene-list');
+    wrap.append(status,list);
+    const notify=(message:string,error=false):void=>{
+      if(pop!==wrap)return;
+      status.textContent=message;
+      changeAttr(status,'data-error',error?'true':undefined);
+    };
+    const showList=async ():Promise<void>=>{
+      list.replaceChildren();notify('Loading scenes…');
+      try {
+        const raw=await req('asset-db','query-assets',{ccType:'cc.SceneAsset',extname:'.scene'});
+        if(pop!==wrap)return; // popup was dismissed while AssetDB was loading
+        const scenes=VHierarchyScenes.listScenes(raw);
+        notify(scenes.length?`${scenes.length} scene(s) found`:'No valid project scenes found.');
+        for(const scene of scenes) {
+          const button=btn('▤ '+scene.name,scene.url,()=>{
+            void (async()=>{
+              if(!window.confirm('Save your current Scene before switching. Continue?'))return;
+              button.disabled=true;
+              notify('Validating and opening '+scene.name+'…');
+              try {
+                await VHierarchyScenes.openVerified(scene,req);
+                if(pop===wrap)closePopup();
+              }catch(e) {
+                notify(`Cannot open ${scene.name}: ${String(e)}`,true);
+                logError('open-scene',e);
+              }finally {button.disabled=false;}
+            })();
+          },'vh-scene-item');
+          list.append(button);
+        }
+      }catch(e){notify('Scene list unavailable: '+String(e),true);logError('list-scenes',e);}
+    };
+    wrap.append(btn('Refresh','Re-query scenes from AssetDB',()=>{void showList();}));
+    await showList();
   }
   function refresh(): void {schedule();}
   function setIcons(next: Record<string,string>): void { iconAssets={...next};schedule(); }
   function applyState(input: State): void { if (!input?.options) return; state=input; schedule(); }
   function stats(): unknown { return { version:'0.1.0',scans,panelCount,visibleRows:views.length,vueRows,hasActiveNode:!!lastHovered?.uuid,lastError }; }
   function stop(): void {
-    stopped=true; layerLookup.dispose(); if(timer)clearInterval(timer);observer?.disconnect();pop?.remove();
+    stopped=true; layerLookup.dispose(); if(timer)clearInterval(timer);observer?.disconnect();closePopup();
     for (const watcher of treeObservers.values()) watcher.disconnect();
     treeObservers.clear();
     for(const release of listeners) release(); listeners.length=0;

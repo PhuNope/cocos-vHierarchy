@@ -7,6 +7,14 @@
 This is a TypeScript Cocos Editor extension inspired by the provided Unity vHierarchy source. It **never patches `app.asar`**. The renderer layer uses a reversible, private Hierarchy DOM/Vue overlay; it may need adjustments for other 3.8.x builds or future Editor updates. If node UUID metadata is unavailable, customization and node mutations are disabled rather than guessing a node.
 
 
+## Patch 5 — Native controls, larger guide hit targets, safe Scene Selector (still 0.1.0)
+
+- Keep **Cocos' native right-side TypeScript/component icon**. The vHierarchy Active checkbox now occupies a separate flex slot **before** the native icon and is visible only while hovering the row (or while it has keyboard focus). The checkbox does not replace, hide, or overwrite native icon DOM; it commits using Scene IPC and snapshot as before.
+- Increase the visible-line click tolerance from 4 to **8 CSS pixels** for easier folding, while excluding the native arrow, icon, rename input, Active checkbox, and keyboard-modifier clicks. The same actual line geometry and parent selection are retained.
+- Repair lock hover: retain the native `ui-icon.lock` at the **left gutter**, always keep its hit area present but visually hidden until row hover/lock hover; its 22px hit target overlaps the row by 2px to avoid a gap where it disappears. Locked icons remain visible.
+- Scene selector: use AssetDB 3.8.8's `query-assets({ ccType: 'cc.SceneAsset', extname: '.scene' })`, filter valid imported project Scene assets, and **revalidate `query-asset-info` before opening**. Await `scene:open-scene` with `Editor.Message.request` (not `send`) so errors are displayed in the popup instead of silently closing. The popup has **× / Escape / outside-click close**, plus Refresh. Opening still requires the save warning/confirmation. A rejected/stale Scene leaves the popup open with an error.
+- **Editor GUI tests still required** for hover behavior, line hit area, Scene Selector, unsaved Scene prompts, and lock navigation; automated regression checks cannot verify the Editor's runtime AssetDB data or custom UI web components.
+
 ## Patch 4 — Node Layer labels (still 0.1.0)
 
 - Read each visible node's Layer from the supported `scene:query-node` dump. Cocos's Hierarchy tree summary lacks the Layer field. A bounded (3 in-flight) asynchronous cache avoids requesting Layer on every repaint; polling refreshes stale cache data.
@@ -17,7 +25,7 @@ This is a TypeScript Cocos Editor extension inspired by the provided Unity vHier
 
 ## Latest test iteration (still 0.1.0)
 
-- **Patch 2:** Group extension commands in **Panel → vHierarchy → Settings / Palette / Enable / Refresh / Diagnostics**. Clicking a visible hierarchy guide (vertical rail or elbow) invokes the **native arrow of the parent associated with that segment**, collapsing it without writing to Cocos node state. This is a per-project option `foldOnGuideClick` (default on); native labels, icon controls, drag/drop and keyboard modifier-clicks are excluded. Click tolerance is 4 CSS pixels; filtered/virtualized gaps are never guessed. Editor GUI validation remains necessary.
+- **Patch 2:** Group extension commands in **Panel → vHierarchy → Settings / Palette / Enable / Refresh / Diagnostics**. Clicking a visible hierarchy guide (vertical rail or elbow) invokes the **native arrow of the parent associated with that segment**, collapsing it without writing to Cocos node state. This is a per-project option `foldOnGuideClick` (default on); native labels, icon controls, drag/drop and keyboard modifier-clicks are excluded. Click tolerance is 8 CSS pixels; filtered/virtualized gaps are never guessed. Editor GUI validation remains necessary.
 
 
 - Fixed `toggle-active` attempting to write to a readonly Vue node (`item.node.active = ...`). All mutations now use an isolated Scene IPC command; the native Hierarchy determines the updated state.
@@ -34,7 +42,7 @@ See [the full phased feature-parity plan](https://github.com/PhuNope/cocos-vHier
 1. Extract `vHierarchy-0.1.0-test.zip` into your project's `extensions` directory. The resulting path must be `<cocos-project>/extensions/cocos-vhierarchy/package.json`.
 2. In Cocos Creator, refresh the extension from **Extension Manager**, or restart the Editor.
 3. Open the native **Hierarchy** panel. The top bar displays `vH`. Open the **Panel → vHierarchy → Settings / Palette** menu to configure it.
-4. Hover any node, then **Alt + right-click** for color/icon, recursive application, or reset. Use the Active checkbox at the right edge of each editable node row.
+4. Hover any node, then **Alt + right-click** for color/icon, recursive application, or reset. Hover a node to reveal its Active checkbox; the native Cocos right-side component icon is preserved.
 5. In the toolbar, type a node name to dim nonmatching rows; the star bookmarks the last hovered node. Click a bookmark to select it. Right-click a bookmark to remove it.
 
 ### Enabled features in 0.1.0

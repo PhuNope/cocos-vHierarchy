@@ -100,12 +100,12 @@ namespace VHierarchyGuides {
 
   export type GuideMode = 'tree' | 'minimal';
   /**
-   * Hit-test only pixels occupied by visible guides, not the rest of the gutter.
+   * Hit-test an 8px tolerance around guides, not the rest of the gutter.
    * Coordinates are relative to the native ui-drag-item bounding rectangle.
    * Returns the depth of the line, whose parent is at depth - 1.
    */
   export function hitTest(node: Node, layout: Layout, x: number, y: number,
-    height: number, mode: GuideMode, tolerance = 4): number | null {
+    height: number, mode: GuideMode, tolerance = 8): number | null {
     if (!node.valid || node.depth < 1 || !Number.isFinite(x) || !Number.isFinite(y) ||
       !Number.isFinite(height) || height <= 0 || y < 0 || y > height) return null;
     if (mode === 'tree' && node.elbowX > 1 && node.elbowWidth >= 5 &&

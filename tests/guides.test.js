@@ -8,6 +8,7 @@ const code = fs.readFileSync(path.join(__dirname,'../dist/renderer/guides.js'),'
 const guides = vm.runInNewContext(`${code}\nVHierarchyGuides;`,{});
 const row = (depth, anchor=80, extra={}) => ({padding:12+depth*20,margin:0,anchor,reportedDepth:depth,...extra});
 test('hook parity: native padding indentation, direct anchor and final child elbows',()=>{
+  // root, child, grandchild, grandchild, child, root
   const {layout,nodes}=guides.calculate([row(0),row(1,60),row(2,80),row(2,80),row(1,60),row(0)]);
   assert.equal(layout.mode,'padding');assert.equal(layout.step,20);assert.equal(layout.base,12);
   assert.equal(nodes[1].hasNextSibling,true);
@@ -38,13 +39,14 @@ test('searching rows suspend guides rather than linking unrelated parents',()=>{
   assert.equal(nodes[3].valid,true);
 });
 
+
 test('clicking a child elbow resolves to its direct expanded parent',()=>{
   const {layout,nodes}=guides.calculate([row(0),row(1,60),row(2,80),row(2,80),row(1,60)]);
   const child=nodes[2],height=20;
   const x=child.offset+child.elbowX+child.elbowWidth/2;
   assert.equal(guides.hitTest(child,layout,x,10,height,'tree'),2);
   assert.equal(guides.foldParentIndex(nodes,2,2),1);
-  assert.equal(guides.hitTest(child,layout,x,18,height,'tree'),null);
+  assert.equal(guides.hitTest(child,layout,x,19,height,'tree'),null);
 });
 test('clicking an ancestor rail resolves to the correct ancestor parent, not current node',()=>{
   const {layout,nodes}=guides.calculate([row(0),row(1,60),row(2,80),row(2,80),row(1,60)]);
@@ -52,7 +54,7 @@ test('clicking an ancestor rail resolves to the correct ancestor parent, not cur
   const railX=item.offset+layout.base+(1-.5)*layout.step;
   assert.equal(guides.hitTest(item,layout,railX,8,20,'tree'),1);
   assert.equal(guides.foldParentIndex(nodes,2,1),0);
-  assert.equal(guides.hitTest(item,layout,railX+10,8,20,'tree'),null);
+  assert.equal(guides.hitTest(item,layout,railX+9,8,20,'tree'),null);
 });
 test('lower rails only capture their lower half; minimal mode supports last branch',()=>{
   const {layout,nodes}=guides.calculate([row(0),row(1,60),row(2,80),row(2,80),row(1,60)]);
@@ -76,4 +78,12 @@ test('invalid/filtered rows cannot fold guessed parents, and margin offset is ac
   const x=item.offset+item.elbowX+item.elbowWidth/2;
   assert.equal(guides.hitTest(item,layout,x,10,20,'tree'),1);
   assert.equal(guides.foldParentIndex(nodes,1,1),0);
+});
+
+test('guide target uses 8px tolerance but does not capture unrelated row area',()=>{
+  const {layout,nodes}=guides.calculate([row(0),row(1,60),row(2,80)]);
+  const child=nodes[2],x=child.offset+child.elbowX+child.elbowWidth/2;
+  assert.equal(guides.hitTest(child,layout,x,17,20,'tree'),2);
+  assert.equal(guides.hitTest(child,layout,x,19,20,'tree'),null);
+  assert.equal(guides.hitTest(child,layout,200,10,20,'tree'),null);
 });

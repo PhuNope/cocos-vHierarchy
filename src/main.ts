@@ -46,7 +46,7 @@ class EditorHierarchyHost {
   private readonly repo = new ProjectStateRepository();
 
   start(): void {
-    this.script = ['guides.js','scene-commands.js','layers.js','renderer.js']
+    this.script = ['guides.js','scene-commands.js','layers.js','scenes.js','renderer.js']
       .map((name: string)=>fs.readFileSync(path.join(__dirname, 'renderer', name), 'utf8')).join('\n');
     const iconDir=path.join(__dirname, '..','static','icons');
     this.icons={};

@@ -99,3 +99,12 @@ Unity source includes feature toggles in `VHierarchyMenu.cs`, row visuals in `VH
 - `scene:query-node` results are cached with bounded concurrency and refreshed asynchronously.
 - Hide Layer badges for Scene roots, native searching, rename mode and narrow rows; preserve guide click targets and native controls.
 - Test switching Layer in Inspector, named custom Layer, searching names, Scene/Prefab, and deep indentation on Creator 3.8.8.
+
+### 0.1.0 Patch 5 regression (2026-11-17)
+
+- [x] Native right-side component icon preserved; Active checkbox visible on row hover only.
+- [x] Guide hit tolerance increased to 8 px; arrow/icon/name/control clicks remain excluded.
+- [x] Lock's left-gutter pointer target remains present across the hover corridor.
+- [x] Scene Selector supports close button, Escape, outside click, Refresh, asset validation and IPC error reporting.
+- [x] TypeScript build and Node regression tests.
+- [ ] Verify actual rendering, scene loading, lock clicks and search behavior in Cocos Creator 3.8.8 GUI.

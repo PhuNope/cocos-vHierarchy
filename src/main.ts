@@ -7,7 +7,7 @@ declare function setInterval(handler: () => void, timeout: number): unknown;
 declare function clearInterval(handle: unknown): void;
 declare function setTimeout(handler: () => void, timeout: number): unknown;
 declare function clearTimeout(handle: unknown): void;
-import { State, Options, Appearance, Feature, FEATURES, sanitizeState, sanitizeAppearance } from './core/model';
+import { State, Options, Appearance, Feature, FEATURES, sanitizeState, sanitizeAppearance, isValidAppearance } from './core/model';
 
 const fs = require('fs');
 const path = require('path');
@@ -172,12 +172,16 @@ class EditorHierarchyHost {
     return true;
   }
   async setAppearance(uuid: string, input: Appearance): Promise<boolean> {
-    if (!/^[\w-]{16,128}$/.test(uuid) || !input || typeof input !== 'object') return false;
+    if (!/^[\w-]{16,128}$/.test(uuid) || !isValidAppearance(input)) return false;
     const next = sanitizeAppearance(input);
-    if (JSON.stringify(next) !== JSON.stringify(input)) return false;
-    if (Object.keys(next).length) this.state.appearances[uuid] = next;
-    else delete this.state.appearances[uuid];
-    this.repo.save(this.state);
+    // Stage a new state first: a failed disk write must not leave the in-memory
+    // appearance changed while the project settings file remains unchanged.
+    const appearances = { ...this.state.appearances };
+    if (Object.keys(next).length) appearances[uuid] = next;
+    else delete appearances[uuid];
+    const newState = { ...this.state, appearances };
+    this.repo.save(newState);
+    this.state = newState;
     await this.broadcast('applyState', this.state);
     return true;
   }

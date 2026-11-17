@@ -38,6 +38,23 @@ export function sanitizeAppearance(input: unknown): Appearance {
   if (typeof raw.recursiveIcon === 'boolean') out.recursiveIcon = raw.recursiveIcon;
   return out;
 }
+/**
+ * Verify every editor-provided appearance field without relying on the order of
+ * object properties. JSON.stringify equality is incorrect here: e.g. selecting
+ * an icon then a color can serialize {icon, color} while sanitizeAppearance
+ * produces the equally valid {color, icon}.
+ *
+ * Unknown keys and invalid field values are still rejected instead of being
+ * silently dropped. Empty objects intentionally clear a node appearance.
+ */
+export function isValidAppearance(input: unknown): input is Appearance {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return false;
+  const raw = input as Record<string, unknown>;
+  const cleaned = sanitizeAppearance(input) as Record<string, unknown>;
+  const keys = Object.keys(raw);
+  return keys.length === Object.keys(cleaned).length &&
+    keys.every(key => Object.prototype.hasOwnProperty.call(cleaned, key) && Object.is(raw[key], cleaned[key]));
+}
 export function sanitizeState(input: unknown): State {
   const raw = input && typeof input === 'object' ? input as Record<string, unknown> : {};
   const opt = raw.options && typeof raw.options === 'object' ? raw.options as Record<string, unknown> : {};

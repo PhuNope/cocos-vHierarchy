@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {PALETTE,ICONS,sanitizeState,sanitizeAppearance,resolveAppearance} = require('../dist/core/model.js');
+const {PALETTE,ICONS,sanitizeState,sanitizeAppearance,isValidAppearance,resolveAppearance} = require('../dist/core/model.js');
 const id = 'd18cf1fe-3d67-4b3b-9b2a-fd0487a71421';
 const child = 'c81231fe-3d67-4b3b-9b2a-fd0487a71422';
 test('sensible defaults and data table from Unity',()=>{
@@ -45,4 +45,24 @@ test('gradient option defaults true and migrates old project settings safely',()
   assert.equal(sanitizeState({}).options.colorGradientsEnabled,true);
   assert.equal(sanitizeState({options:{colorGradientsEnabled:false}}).options.colorGradientsEnabled,false);
   assert.equal(sanitizeState({options:{colorGradientsEnabled:'false'}}).options.colorGradientsEnabled,true);
+});
+
+test('valid appearance is independent of property insertion order',()=>{
+  const first={icon:'folder',color:3,recursiveIcon:true,recursiveColor:false};
+  const second={color:3,recursiveColor:false,icon:'folder',recursiveIcon:true};
+  assert.equal(isValidAppearance(first),true);
+  assert.equal(isValidAppearance(second),true);
+  assert.deepEqual(sanitizeAppearance(first),sanitizeAppearance(second));
+  assert.equal(isValidAppearance({recursiveColor:true,color:3}),true);
+  assert.equal(isValidAppearance({}),true,'clearing all appearance data is valid');
+});
+
+test('appearance still rejects unknown fields or invalid types',()=>{
+  assert.equal(isValidAppearance({color:-1}),false);
+  assert.equal(isValidAppearance({icon:'invalid-icon'}),false);
+  assert.equal(isValidAppearance({color:2,unknown:true}),false);
+  assert.equal(isValidAppearance({color:undefined}),false);
+  assert.equal(isValidAppearance({recursiveColor:'true'}),false);
+  assert.equal(isValidAppearance([]),false);
+  assert.equal(isValidAppearance(null),false);
 });

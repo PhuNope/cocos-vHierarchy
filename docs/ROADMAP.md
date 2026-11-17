@@ -116,3 +116,9 @@ Unity source includes feature toggles in `VHierarchyMenu.cs`, row visuals in `VH
 - [x] Persist `colorGradientsEnabled` and previously-unused `colorSaturation` / `colorBrightness` as validated project settings. Live nine-color preview in Settings, palette swatches honor current tint.
 - [x] Precompute 18 color gradients per scan and preserve selected-row highlight above tint. No injection into runtime GameObjects.
 - [ ] Validate appearance manually on Cocos Creator 3.8.8, including dark/light theme, roots/children, narrow Hierarchy, active checkbox, native component icon and Scene search; automated tests alone cannot verify native CSS integration.
+
+### 0.1.0 Patch 12 — Palette appearance validation
+
+- [x] Fix false `Rejected appearance` response when an appearance object contains valid fields in a different insertion order from `sanitizeAppearance` (e.g. selecting icon before color).
+- [x] Keep strict allowlist validation and stage configuration updates before committing in-memory state. Add focused regression tests for successive Palette actions.
+- [ ] Confirm color/icon selection and recursive toggles in Creator 3.8.8, including restarting Editor and project settings persistence.

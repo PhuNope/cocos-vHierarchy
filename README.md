@@ -33,6 +33,14 @@ This is a TypeScript Cocos Editor extension inspired by the provided Unity vHier
 - Move optional vHierarchy palette icons near the node's own name/icon, avoiding collisions with the Layer/native-component area. Native component display is always Cocos-owned; no custom component dots are added.
 - Regression coverage includes gap-free Lock/checkbox hit areas, Layer adjacency to the native component indicator, and untouched node name/search. **Real Creator 3.8.8 GUI verification is still required**, especially while dragging between native Lock and the hover-only checkbox.
 
+## Patch 12 — Fix palette color/icon persistence (still 0.1.0)
+
+- Fixed **Rejected appearance** when choosing a color after an icon (or recursive options after a color). The validation previously compared `JSON.stringify` output against a sanitized object whose property order could differ; two semantically identical appearances were incorrectly rejected.
+- Validate each allowed field by key/value independently of insertion order, while still rejecting invalid colors, unrecognized icon keys and unknown settings. Clearing an appearance with `{}` remains supported.
+- Stage and persist a copy of the appearance state before publishing it, avoiding changes to in-memory state when saving fails. Error reports now include only the node-ID length and requested field names to aid diagnosis without dumping scene data.
+- Added regression coverage for icon → color → recursive color/icon and for invalid payloads. This project-level palette data does **not** mark the Cocos Scene dirty; it lives in `settings/vHierarchy.json`.
+- GUI verification on Cocos Creator 3.8.8 is still needed; automated tests can verify persistence and IPC wiring but not the live Hierarchy surface.
+
 ## Patch 5 — Native controls, larger guide hit targets, safe Scene Selector (still 0.1.0)
 
 - Keep **Cocos' native right-side TypeScript/component icon**. The current Patch 6 Active checkbox occupies the separate left gutter next to Lock and is visible only while hovering the row (or while it has keyboard focus). The checkbox does not replace, hide, or overwrite native icon DOM; it commits using Scene IPC and snapshot as before.

@@ -29,6 +29,21 @@ test('can load, apply settings and persist without changing scene files',async()
   assert.equal(await main.methods.setOption('zebraStriping',false),true);
   assert.equal(await main.methods.setOption('nonsense',true),false);
   assert.equal(await main.methods.setAppearance('b204319a-288c-484a-8f60-287573a05ab6',{color:4,icon:'📁'}),true);
+  // Real palette workflow: choose icon first, then color, then recursive options.
+  // The editor preserves insertion order, whereas the sanitizer returns
+  // canonical field order. These states must all be accepted.
+  const paletteUuid='b204319a-288c-484a-8f60-287573a05ab6';
+  assert.equal(await main.methods.setAppearance(paletteUuid,{icon:'folder'}),true);
+  assert.equal(await main.methods.setAppearance(paletteUuid,{icon:'folder',color:5}),true);
+  assert.equal(await main.methods.setAppearance(paletteUuid,{icon:'folder',color:5,recursiveColor:true}),true);
+  assert.equal(await main.methods.setAppearance(paletteUuid,{recursiveIcon:true,icon:'camera',color:2,recursiveColor:true}),true);
+  assert.deepEqual(main.methods.getState().appearances[paletteUuid],
+    {color:2,icon:'camera',recursiveColor:true,recursiveIcon:true});
+  assert.equal(await main.methods.setAppearance(paletteUuid,{icon:'does-not-exist',color:2}),false);
+  assert.deepEqual(main.methods.getState().appearances[paletteUuid],
+    {color:2,icon:'camera',recursiveColor:true,recursiveIcon:true});
+  assert.equal(await main.methods.setAppearance(paletteUuid,{color:4,icon:'📁'}),true);
+
   assert.equal(await main.methods.toggleBookmark('b204319a-288c-484a-8f60-287573a05ab6','Example'),true);
   assert.equal(main.methods.getState().options.zebraStriping,false);
   const filename=path.join(project,'settings','vHierarchy.json');

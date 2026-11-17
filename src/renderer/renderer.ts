@@ -716,7 +716,7 @@
   }
   async function persistAppearance(item: Item, next: Appearance): Promise<void> {
     if(!item.uuid) return;
-    try { const ok=await req('cocos-vhierarchy','set-appearance',item.uuid,next); if(!ok)throw new Error('Rejected appearance'); }
+    try { const ok=await req('cocos-vhierarchy','set-appearance',item.uuid,next); if(!ok)throw new Error(`Appearance rejected by extension (node ID length: ${item.uuid.length}; fields: ${Object.keys(next).join(', ')})`); }
     catch(e){logError('appearance',e);}
   }
   function closePopup(): void {

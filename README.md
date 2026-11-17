@@ -7,6 +7,12 @@
 This is a TypeScript Cocos Editor extension inspired by the provided Unity vHierarchy source. It **never patches `app.asar`**. The renderer layer uses a reversible, private Hierarchy DOM/Vue overlay; it may need adjustments for other 3.8.x builds or future Editor updates. If node UUID metadata is unavailable, customization and node mutations are disabled rather than guessing a node.
 
 
+## Patch 8 — Row-wide hover + action strip background + Layer icon spacing (still 0.1.0)
+
+- The **42px left Lock/Active strip** now has an actual full-height, pointer-receiving background element. Hovering its empty area triggers the same native row hover as hovering the node name; Lock remains to the left of the checkbox. The strip uses a subtle slate background with clearer hover/selection states, while native guide lines and click targets stay to its right. Background is behind both controls; no Scene data is modified.
+- The read-only **Layer label reserves a 26px empty component area** on rows without a native right-side component indicator. When the native Cocos TypeScript/component icon exists, Layer receives an **8px gap** from that icon. The available-width check accounts for the reserved slot, so Layer disappears safely on very narrow / deep-indented rows. Node name, search and native component icons remain untouched.
+- The strip/metadata are removed when the extension is disabled/unloaded. **Real GUI verification on Creator 3.8.8 is still required**, especially hovering empty gutter space across locked, selected, and deeply nested nodes.
+
 ## Patch 6 — Unity-style Active checkbox position / Layer alignment (still 0.1.0)
 
 - Align controls with the provided Unity *Activation toggle* reference: **left to right: native Lock → Active checkbox → native Hierarchy arrow / node**. Reserve a 42px left action gutter (Lock 22px + checkbox 20px), with contiguous hover targets so controls do not disappear during cursor movement. Checkbox looks like a small 14px dark square with a light tick and blue hover outline; it is visible only when hovering the node or focusing a control. Active mutations still use Scene IPC + snapshot, not Vue assignments.

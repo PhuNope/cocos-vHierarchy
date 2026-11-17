@@ -73,11 +73,27 @@
     .vh-icon { position:relative; flex:0 0 15px; width:15px; height:15px; margin-left:2px; z-index:1; pointer-events:none; object-fit:contain; }
     .vh-emoji { width:auto; font-size:12px; line-height:15px; }
 
-    /* The left-hand action gutter mirrors Unity vHierarchy: native Lock first,
-       Active checkbox immediately to its RIGHT. Both use full 20px hit targets
-       so the cursor does not lose node hover while moving between controls.
-       Reserving space in the tree keeps native arrows and guide hit targets free. */
+    /* The reserved action strip is a real pointer target across its ENTIRE width.
+       This includes the empty areas around a hidden hover-only checkbox.
+       Its lower z-index keeps native Lock and Active above it and does not
+       cover the native hierarchy guide/arrow region to the right. */
     .tree[data-vh-lock-gutter] { padding-left:42px !important; }
+    .tree[data-vh-lock-gutter] > .tree-node > .drag-item > .vh-action-gutter {
+      position:absolute; left:-42px; top:0; width:42px; height:100%;
+      display:block; box-sizing:border-box; z-index:3; pointer-events:auto;
+      cursor:default; border-right:1px solid rgba(134,153,173,.28);
+      background:rgba(82,100,122,.19);
+    }
+    .tree[data-vh-lock-gutter] > .tree-node[data-vh-stripe='1'] > .drag-item > .vh-action-gutter {
+      background:rgba(96,113,133,.23);
+    }
+    .tree[data-vh-lock-gutter] > .tree-node:hover > .drag-item > .vh-action-gutter,
+    .tree[data-vh-lock-gutter] > .tree-node:focus-within > .drag-item > .vh-action-gutter {
+      background:rgba(100,130,163,.34);
+    }
+    .tree[data-vh-lock-gutter] > .tree-node[is-selected='true'] > .drag-item > .vh-action-gutter {
+      background:rgba(80,125,175,.43);
+    }
     .tree[data-vh-lock-gutter] > .tree-node > .drag-item > ui-icon.lock {
       display:inline-flex !important; align-items:center; justify-content:center;
       left:-42px !important; width:22px; height:20px; top:0;
@@ -120,16 +136,17 @@
       border-color:#75b6ff; box-shadow:0 0 0 1px rgba(117,182,255,.48);
     }
     .vh-active:disabled + .vh-active-box { opacity:.45; cursor:wait; }
-    /* Keep the Cocos rightmost TypeScript/component icon intact. Name uses
-       its NATIVE flex:1, pushing a read-only Layer label immediately LEFT
-       of that icon instead of displaying Layer beside the node name. */
+    /* Layer always reserves a right-aligned component slot. When Cocos draws
+       a native component icon, preserve it and put an 8px visual gap before it.
+       Without an icon, keep 26px empty so Layer labels still line up neatly. */
     .vh-node-layer { display:inline-flex; flex:0 0 auto; align-items:center;
-      min-width:0; margin-left:auto; margin-right:4px; padding-left:6px;
+      min-width:0; margin-left:auto; margin-right:26px; padding-left:6px;
       border-left:1px solid rgba(161,176,192,.4);
       color:var(--color-normal-contrast, #a3b1bf); opacity:.68;
       font:500 10px/15px Arial,sans-serif; white-space:nowrap; user-select:none;
       pointer-events:none; max-width:96px; overflow:hidden; text-overflow:ellipsis;
     }
+    .tree-node[data-vh-native-component='true'] .vh-node-layer {margin-right:8px;}
     .tree-node[is-selected='true'] .vh-node-layer {opacity:.84;}
     .tree[searching] .vh-node-layer, .tree-node[state='rename'] .vh-node-layer {display:none !important;}
     .vh-layer { position:fixed; inset:0; z-index:100000; pointer-events:none; }
@@ -347,6 +364,7 @@
     const clear = (): void => {
       old?.remove();
       changeAttr(item.row, 'data-vh-has-layer');
+      changeAttr(item.row, 'data-vh-native-component');
       item.row.style.removeProperty('--vh-node-name-width'); // clean up earlier patches
     };
     if (!state.options.enabled || !state.options.showNodeLayers || !item.uuid || !item.nameEl ||
@@ -358,12 +376,15 @@
     if (textContext) textContext.font = font;
     const layerWidth = Math.min(96, Math.ceil((textContext?.measureText(label).width ?? label.length * 7) + 14));
     const nativeComponent = item.drag.querySelector(':scope > ui-icon[default="asset"][value="typescript"]') as HTMLElement | null;
-    const componentWidth = nativeComponent ? (nativeComponent.offsetWidth || 16) + 4 : 0;
-    const available = item.drag.clientWidth - item.nameEl.offsetLeft - componentWidth;
+    // Include both the icon width AND the visible gap in the responsive width
+    // budget. Rows without native component icons reserve the same right slot.
+    const rightReserve = nativeComponent ? (nativeComponent.offsetWidth || 16) + 8 : 26;
+    const available = item.drag.clientWidth - item.nameEl.offsetLeft - rightReserve;
     // Always leave enough space for the native node name, even at deep nesting.
     if (available < layerWidth + 40) { clear(); return; }
     item.row.style.removeProperty('--vh-node-name-width');
     changeAttr(item.row, 'data-vh-has-layer', 'true');
+    changeAttr(item.row, 'data-vh-native-component', nativeComponent ? 'true' : undefined);
     const badge = old || el('span', 'vh-node-layer');
     badge.setAttribute('aria-hidden', 'true');
     badge.title = '';
@@ -416,6 +437,17 @@
     // Component minimap has been removed by product request; clean up remnants
     // from any previously injected renderer instance.
     item.drag.querySelector(':scope > .vh-components')?.remove();
+    // The gutter itself receives pointer hover even in the empty cell around
+    // checkbox/Lock; as a descendant it activates normal .tree-node:hover CSS.
+    // No pointer event is intercepted on the node name, component icons or lines.
+    const priorGutter = item.drag.querySelector(':scope > .vh-action-gutter');
+    if (enabled) {
+      if (!priorGutter) {
+        const gutter = el('span', 'vh-action-gutter');
+        gutter.setAttribute('aria-hidden', 'true');
+        item.drag.prepend(gutter);
+      }
+    } else priorGutter?.remove();
     changeAttr(item.row, 'data-vh-active-control', enabled && opts.activationToggle && !!item.uuid && !item.node?.isScene && !item.node?.readonly ? 'true' : undefined);
     // Remove any direct input from an earlier patch before inserting the
     // left-gutter control. Never insert near the native right-side icon.
@@ -786,11 +818,11 @@
         tree.removeAttribute('data-vh-lock-gutter');
       for(const row of (r as Element).querySelectorAll?.('.tree-node')||[]){
         const h=row as HTMLElement;
-        for(const key of ['data-vh-tint','data-vh-stripe','data-vh-dim','data-vh-compact','data-vh-active-control','data-vh-has-layer'])h.removeAttribute(key);
+        for(const key of ['data-vh-tint','data-vh-stripe','data-vh-dim','data-vh-compact','data-vh-active-control','data-vh-has-layer','data-vh-native-component'])h.removeAttribute(key);
         clearGuides(h);
         h.style.removeProperty('--vh-row-color');
         h.style.removeProperty('--vh-node-name-width');
-        for(const child of h.querySelectorAll(':scope > .drag-item > .vh-icon,:scope > .drag-item > .vh-components,:scope > .drag-item > .vh-active,:scope > .drag-item > .vh-active-hit,:scope > .drag-item > .vh-node-layer'))child.remove();
+        for(const child of h.querySelectorAll(':scope > .drag-item > .vh-icon,:scope > .drag-item > .vh-components,:scope > .drag-item > .vh-active,:scope > .drag-item > .vh-active-hit,:scope > .drag-item > .vh-node-layer,:scope > .drag-item > .vh-action-gutter'))child.remove();
       }
       for(const bar of (r as Element).querySelectorAll?.('.vh-toolbar')||[])bar.remove();
       for(const css of (r as Element).querySelectorAll?.('style[data-vh-style]')||[])css.remove();

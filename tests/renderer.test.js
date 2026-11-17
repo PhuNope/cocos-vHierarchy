@@ -63,3 +63,27 @@ test('Scene popup can close via explicit button, Escape and outside click',()=>{
   assert.match(renderer,/await VHierarchyScenes\.openVerified\(scene, req\)/);
   assert.doesNotMatch(renderer,/Message\?\.send\?\.\('scene', 'open-scene'/);
 });
+
+
+test('entire left action gutter is hoverable, including empty checkbox area',()=>{
+  assert.match(renderer,/\.tree\[data-vh-lock-gutter\] > \.tree-node > \.drag-item > \.vh-action-gutter \{/);
+  assert.match(renderer,/left:-42px; top:0; width:42px; height:100%/);
+  assert.match(renderer,/z-index:3; pointer-events:auto/);
+  assert.match(renderer,/item\.drag\.prepend\(gutter\)/);
+  assert.match(renderer,/gutter\.setAttribute\('aria-hidden', 'true'\)/);
+  assert.match(renderer,/\.tree-node:hover > \.drag-item > \.vh-active-hit/);
+  assert.match(renderer,/\.tree-node:hover > \.drag-item > \.vh-action-gutter/);
+  assert.match(renderer,/ui-icon\.lock \{[\s\S]*?z-index:4/);
+  assert.match(renderer,/\.vh-active-hit \{[\s\S]*?z-index:5/);
+});
+test('gutter has distinct subtle background with hover and selection states',()=>{
+  assert.match(renderer,/border-right:1px solid rgba\(134,153,173,\.28\)/);
+  assert.match(renderer,/background:rgba\(82,100,122,\.19\)/);
+  assert.match(renderer,/background:rgba\(100,130,163,\.34\)/);
+  assert.match(renderer,/background:rgba\(80,125,175,\.43\)/);
+});
+test('full gutter and layer spacing are removed when extension is disabled or unloaded',()=>{
+  assert.match(renderer,/else\s+priorGutter\?\.remove\(\)/);
+  assert.match(renderer,/\.vh-node-layer,:scope > \.drag-item > \.vh-action-gutter/);
+  assert.match(renderer,/data-vh-has-layer', 'data-vh-native-component/);
+});

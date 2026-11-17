@@ -122,3 +122,8 @@ Unity source includes feature toggles in `VHierarchyMenu.cs`, row visuals in `VH
 - [x] Fix false `Rejected appearance` response when an appearance object contains valid fields in a different insertion order from `sanitizeAppearance` (e.g. selecting icon before color).
 - [x] Keep strict allowlist validation and stage configuration updates before committing in-memory state. Add focused regression tests for successive Palette actions.
 - [ ] Confirm color/icon selection and recursive toggles in Creator 3.8.8, including restarting Editor and project settings persistence.
+
+
+### M2 update — Patch 14 (still version 0.1.0)
+
+Curated searchable Material Symbols Outlined catalog with official Google Fonts lazy loading; per-node icon tint presets and custom hex color; recursive icon/tint inheritance and strict settings validation. Remains to validate Google Fonts CSP support in live Creator 3.8.8 and add optional offline font/SVG pack if required. No tag or GitHub Release.

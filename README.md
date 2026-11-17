@@ -7,6 +7,14 @@
 This is a TypeScript Cocos Editor extension inspired by the provided Unity vHierarchy source. It **never patches `app.asar`**. The renderer layer uses a reversible, private Hierarchy DOM/Vue overlay; it may need adjustments for other 3.8.x builds or future Editor updates. If node UUID metadata is unavailable, customization and node mutations are disabled rather than guessing a node.
 
 
+## Patch 14 (0.1.0) — Material Symbols icon picker, search and tint
+
+- **Alt + right-click** a node to open the palette. It now includes a **searchable local catalog of 180+ Google Material Symbols Outlined names** alongside the 12 existing vHierarchy SVG assets. Search works offline and filters by icon name, but rendering Google icons uses the official `fonts.googleapis.com` stylesheet (lazy-loaded only when a Material glyph is requested). **Network access and Cocos Editor Content-Security-Policy permission are required for the Google font.** If loading fails, Material entries show a diamond placeholder; the bundled 12 SVG icons remain usable offline. No Google login or API key is needed, and vHierarchy does not scrape Google search results.
+- **Icon tint:** choose any hex RGB with the color picker, use the nine presets, or reset to the original icon color. SVGs are recolored with a CSS mask; Google Material Symbols use their CSS `color` property. Tint is stored in node appearance as `iconColor`, independently from the node background color, and is inherited along with a recursive icon unless overridden. Palette selection and search never modify `node.name`, Scene assets, or the native Cocos right-side component icon.
+- **Validation:** icon keys are allowlisted from the curated Material Symbols catalog; arbitrary URLs, HTML and unsupported icon names are rejected. Icon colors must be six-digit hex RGB. Existing project configurations and assigned local icons migrate without changes. Icon assets are only renderer decorations.
+- **Source and licensing:** [Google Material Symbols](https://fonts.google.com/icons), [Developer guide](https://developers.google.com/fonts/docs/material_symbols), [Apache-2.0 license](https://github.com/google/material-design-icons/blob/master/LICENSE). Material Symbols is a Google trademark; the library is a third-party icon resource, not a Google-endorsed extension. Google font requests occur directly from the local Editor process when Material icons are used; no telemetry is added by vHierarchy.
+- **Editor GUI verification still required:** online font loading may be denied by the Editor CSP or a corporate proxy; keep a local SVG option as fallback. Validate recursive tint inheritance, icon search, node rename and long Layer labels in the target Creator version.
+
 ## Patch 10 — Compact Quick Toggle gutter and name ellipsis (still 0.1.0)
 
 - **Quick Toggle off:** when `activationToggle` is disabled in **Panel → vHierarchy → Settings / Palette**, reclaim its 20px checkbox column. The existing 22px native Lock control remains in a separate hoverable gutter; enabling Quick Toggle restores the 42px gutter (22px Lock + 20px checkbox). Native fold guides and arrows are unaffected, and settings persist as before.
@@ -86,7 +94,7 @@ See [the full phased feature-parity plan](https://github.com/PhuNope/cocos-vHier
 | Hierarchy lines | Tree/minimal connectors (best effort if rows are virtualized); click a visible line to collapse its parent |
 | Zebra striping and minimal mode | Visual styles on existing native rows |
 | Per-object color palette | 1 gray + 8 hues, theme-aware gradients (optional), saturation/brightness sliders, muted recursive inheritance |
-| Per-object icons | Emoji icon chooser, recursive inheritance; **not** Unity-specific raster icons |
+| Per-object icons | 12 local SVGs, curated searchable Google Material Symbols (requires online Google Fonts), RGB tint presets/custom color, recursive icon+tint inheritance; legacy emoji settings preserved |
 | Component minimap | Removed per request; only native component icons (if enabled in Cocos preferences) remain |
 | Activation checkbox | Direct checkbox via `scene:query-node`, explicit `scene:begin-recording` / `scene:set-property` / `scene:end-recording`, and `scene:query-dirty`; rejects unknown/locked/readonly nodes |
 | Navigation bar and bookmarks | Toolbar, non-destructive search dimming, bookmark selection |

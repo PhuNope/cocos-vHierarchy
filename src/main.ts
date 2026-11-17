@@ -8,6 +8,7 @@ declare function clearInterval(handle: unknown): void;
 declare function setTimeout(handler: () => void, timeout: number): unknown;
 declare function clearTimeout(handle: unknown): void;
 import { State, Options, Appearance, Feature, FEATURES, sanitizeState, sanitizeAppearance, isValidAppearance, isNodeId } from './core/model';
+import { MATERIAL_SYMBOL_NAMES } from './core/material-catalog';
 
 const fs = require('fs');
 const path = require('path');
@@ -106,7 +107,7 @@ class EditorHierarchyHost {
       // Only the main Cocos Editor renderer may own the Hierarchy panel.
       const probe = await this.execute(client.wc, "document.body?.getAttribute('name') === 'main' ? 'main' : 'other'");
       if (probe !== 'main') return;
-      const result = await this.execute(client.wc, `${this.script}\n;window.__vHierarchy388?.setIcons(${JSON.stringify(this.icons)});window.__vHierarchy388?.applyState(${JSON.stringify(this.state)});({status:'running'});`);
+      const result = await this.execute(client.wc, `${this.script}\n;window.__vHierarchy388?.setIcons(${JSON.stringify(this.icons)});window.__vHierarchy388?.setMaterialSymbols(${JSON.stringify(MATERIAL_SYMBOL_NAMES)});window.__vHierarchy388?.applyState(${JSON.stringify(this.state)});({status:'running'});`);
       if (result?.status === 'running') client.attached = true;
     } finally { client.inFlight = false; }
   }

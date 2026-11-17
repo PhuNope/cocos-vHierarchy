@@ -6,12 +6,12 @@
 (() => {
   type Flag = 'navigationBar' | 'activationToggle' | 'hierarchyLines' | 'zebraStriping' | 'minimalMode' | 'sceneSelector' | 'keyboardShortcuts' | 'foldOnGuideClick' | 'showNodeLayers' | 'colorGradientsEnabled';
   interface Opts extends Record<Flag, boolean> { enabled: boolean; guideMode: 'tree' | 'minimal'; colorSaturation: number; colorBrightness: number; }
-  interface Appearance { color?: number; icon?: string; recursiveColor?: boolean; recursiveIcon?: boolean; }
+  interface Appearance { color?: number; icon?: string; iconColor?: string; recursiveColor?: boolean; recursiveIcon?: boolean; }
   interface Bookmark { uuid: string; name: string; }
   interface State { options: Opts; appearances: Record<string, Appearance>; bookmarks: Bookmark[]; }
   interface TreeDump { uuid?: string; name?: string; depth?: number; parent?: string; active?: boolean; locked?: boolean; readonly?: boolean; isScene?: boolean; components?: Array<{ type?: string; extends?: string[] }>; prefab?: { state?: number }; layer?: unknown; }
   interface Item { guide?: { group: Item[]; index: number; result: VHierarchyGuides.Result }; row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; nameEl: HTMLElement | null; depth: number; padding: number; margin: number; anchor: number; searching: boolean; }
-  interface Hook { refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
+  interface Hook { refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(names: string[]): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
@@ -19,6 +19,8 @@
 
   const PALETTE = ['#777d89', '#b35e68', '#b48e4f', '#a9a857', '#61a886', '#5d94b5', '#737cc2', '#a36bb4', '#b56e9d'];
   const ICONS = ['folder','camera','light','script','particle','physics','audio','material','prefab','canvas','settings','favorite'];
+  const MATERIAL_PREFIX = 'material:';
+  const GOOGLE_MATERIAL_CSS = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:FILL,GRAD,opsz,wght@0,0,24,400&display=swap';
   const GUIDE_PROPS = ['--vh-guide-images', '--vh-guide-positions', '--vh-guide-sizes', '--vh-guide-width',
     '--vh-guide-left', '--vh-guide-elbow-left', '--vh-guide-elbow-width'];
   const GUIDE_COLOR = 'rgba(151,166,187,.42)';
@@ -74,6 +76,15 @@
     .tree-node[is-selected='true'] > ui-drag-item.drag-item::after {opacity:1}
     .vh-icon { position:relative; flex:0 0 15px; width:15px; height:15px; margin-left:2px; z-index:1; pointer-events:none; object-fit:contain; }
     .vh-emoji { width:auto; font-size:12px; line-height:15px; }
+    .vh-tinted-icon { display:inline-block; background-color:var(--vh-icon-color,#dce5ef);
+      -webkit-mask-image:var(--vh-icon-mask); mask-image:var(--vh-icon-mask);
+      -webkit-mask-size:contain; mask-size:contain; -webkit-mask-position:center; mask-position:center;
+      -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat; }
+    .vh-material-symbol { display:inline-flex; align-items:center; justify-content:center;
+      font-family:'Material Symbols Outlined',sans-serif; font-size:16px; font-weight:normal;
+      line-height:15px; letter-spacing:normal; white-space:nowrap; overflow:hidden;
+      font-feature-settings:'liga'; font-variation-settings:'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      -webkit-font-smoothing:antialiased; }
 
     /* Quick Toggle off: reclaim exactly the 20px checkbox column, leaving only
        the native 22px Lock column. The whole remaining gutter stays hoverable.
@@ -183,7 +194,20 @@
     .vh-scene-status[data-error='true'] { color:#f2a5a5; }
     .vh-pop label { display:flex; gap:5px; align-items:center; margin:5px 0; cursor:pointer; }
     .vh-pop input[type=checkbox] { accent-color:#68a4ff; }
-    .vh-grid { display:grid; grid-template-columns:repeat(9, 1fr); gap:4px; margin:7px 0; }
+    .vh-grid { display:grid; grid-template-columns:repeat(8, 1fr); gap:5px; margin:7px 0;
+      max-height:236px; overflow:auto; padding:4px; align-content:start; }
+    .vh-icon-search { box-sizing:border-box; width:100%; min-width:0; margin-top:7px;
+      padding:6px 8px; border:1px solid #68798a; border-radius:5px;
+      background:#1d242c; color:#edf3f9; font:12px Arial,sans-serif; }
+    .vh-icon-count { color:#a8b4c1; font-size:10px; margin-top:5px; }
+    .vh-icon-palette { display:flex; flex-wrap:wrap; gap:5px; align-items:center; margin-top:6px; }
+    .vh-icon-palette input[type=color] { width:32px; height:26px; padding:2px; background:#29323c;
+      border:1px solid #7a8796; border-radius:4px; cursor:pointer; }
+    .vh-icon-preset { flex:0 0 17px; width:17px; height:17px; border-radius:50%;
+      border:1px solid #f5f5f573; cursor:pointer; padding:0; }
+    .vh-symbol[aria-pressed='true'] { outline:2px solid #95c6ff; outline-offset:1px; }
+    .vh-symbol > .vh-material-symbol { flex:0 0 19px; width:19px; height:19px; line-height:19px; font-size:19px; }
+    .vh-symbol > .vh-tinted-icon { width:18px; height:18px; flex:0 0 18px; }
     .vh-colors { display:grid; grid-template-columns:repeat(9, 1fr); gap:5px; margin:7px 0; }
     .vh-swatch { width:19px; height:19px; border:1px solid #e1e7e966; border-radius:4px; padding:0; cursor:pointer; }
     .vh-swatch[aria-pressed='true'] { outline:2px solid #c5d9f0; outline-offset:1px; }
@@ -200,7 +224,41 @@
   `;
 
   let state = DEFAULT;
+  const appearanceWrites = new Map<string, Promise<void>>();
   let iconAssets: Record<string, string> = {};
+  let materialSymbols: string[] = [];
+  let materialFontStatus: 'idle'|'loading'|'ready'|'error' = 'idle';
+  let googleFontLink: HTMLLinkElement | null = null;
+  function materialName(key: string): string { return key.slice(MATERIAL_PREFIX.length); }
+  function updateMaterialGlyphs(): void {
+    for (const node of rootHost.querySelectorAll('.vh-material-symbol[data-vh-material]')) {
+      const span=node as HTMLElement;
+      const name=span.getAttribute('data-vh-material') || '';
+      span.textContent=materialFontStatus==='ready' ? name : '◇';
+      span.title=materialFontStatus==='error' ? `${name} — Google Fonts unavailable (online required)` : name;
+    }
+  }
+  function requestMaterialFont(): void {
+    if (materialFontStatus!=='idle') return;
+    materialFontStatus='loading';
+    const link=document.createElement('link');googleFontLink=link;
+    link.rel='stylesheet';link.href=GOOGLE_MATERIAL_CSS;
+    link.onload=()=>{
+      if (stopped) return;
+      void document.fonts.load('18px "Material Symbols Outlined"','home')
+        .then(faces=>{materialFontStatus=faces.length ? 'ready':'error'; updateMaterialGlyphs();schedule();})
+        .catch(()=>{materialFontStatus='error';updateMaterialGlyphs();});
+    };
+    link.onerror=()=>{materialFontStatus='error';updateMaterialGlyphs();};
+    (document.head || document.documentElement).appendChild(link);
+  }
+  function materialGlyph(key: string, className=''): HTMLElement {
+    requestMaterialFont();
+    const glyph=el('span',('vh-material-symbol '+className).trim(),materialFontStatus==='ready'?materialName(key):'◇');
+    glyph.setAttribute('data-vh-material',materialName(key));
+    glyph.title=materialName(key);
+    return glyph;
+  }
   let stopped = false;
   let queued = false;
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -311,12 +369,13 @@
     const a = state.appearances[item.uuid] || {};
     let color: number | undefined;
     let icon: string | undefined;
+    let iconColor: string | undefined;
     for (const id of ancestorIds) {
       const parent = state.appearances[id];
       if (parent?.recursiveColor && parent.color !== undefined) color = parent.color;
-      if (parent?.recursiveIcon && parent.icon) icon = parent.icon;
+      if (parent?.recursiveIcon && parent.icon) { icon = parent.icon; iconColor = parent.iconColor; }
     }
-    return { ...a, color: a.color ?? color, icon: a.icon ?? icon, colorInherited: a.color === undefined && color !== undefined };
+    return { ...a, color: a.color ?? color, icon: a.icon ?? icon, iconColor: a.iconColor ?? (a.icon ? undefined : iconColor), colorInherited: a.color === undefined && color !== undefined };
   }
   function changeAttr(node: HTMLElement, key: string, value?: string): void {
     if (value === undefined) { if (node.hasAttribute(key)) node.removeAttribute(key); }
@@ -436,15 +495,31 @@
     }
     const iconEl = item.drag.querySelector(':scope > .vh-icon') as HTMLElement | null;
     const displayIcon = enabled && inherited.icon ? inherited.icon : '';
-    if (displayIcon && iconAssets[displayIcon]) {
+    if (displayIcon.startsWith(MATERIAL_PREFIX) && materialSymbols.includes(materialName(displayIcon))) {
+      requestMaterialFont();
+      if (iconEl && !iconEl.classList.contains('vh-material-symbol')) iconEl.remove();
+      const marker=(item.drag.querySelector(':scope > .vh-icon.vh-material-symbol') as HTMLElement | null)
+        || ensureControl(item,'vh-icon',()=>materialGlyph(displayIcon,'vh-icon'));
+      marker.setAttribute('data-vh-material',materialName(displayIcon));
+      marker.textContent=materialFontStatus==='ready' ? materialName(displayIcon) : '◇';
+      marker.style.color=inherited.iconColor || '';
+      marker.title=displayIcon;
+    } else if (displayIcon && iconAssets[displayIcon] && inherited.iconColor) {
+      if (iconEl && !iconEl.classList.contains('vh-tinted-icon')) iconEl.remove();
+      const marker=(item.drag.querySelector(':scope > .vh-icon.vh-tinted-icon') as HTMLElement | null)
+        || ensureControl(item,'vh-icon',()=>el('span','vh-icon vh-tinted-icon'));
+      marker.style.setProperty('--vh-icon-color',inherited.iconColor);
+      marker.style.setProperty('--vh-icon-mask',`url("${iconAssets[displayIcon]}")`);
+      marker.title=displayIcon;
+    } else if (displayIcon && iconAssets[displayIcon]) {
       if (iconEl && iconEl.tagName !== 'IMG') iconEl.remove();
       const marker = (item.drag.querySelector(':scope > img.vh-icon') as HTMLImageElement | null)
         || ensureControl(item, 'vh-icon', () => el('img','vh-icon')) as HTMLImageElement;
       if (marker.src !== iconAssets[displayIcon]) marker.src = iconAssets[displayIcon];
       marker.title = displayIcon;
     } else if (displayIcon) {
-      if (iconEl && iconEl.tagName !== 'SPAN') iconEl.remove();
-      const marker = (item.drag.querySelector(':scope > span.vh-icon') as HTMLElement | null)
+      if (iconEl && !iconEl.classList.contains('vh-emoji')) iconEl.remove();
+      const marker = (item.drag.querySelector(':scope > span.vh-icon.vh-emoji') as HTMLElement | null)
         || ensureControl(item, 'vh-icon', () => el('span','vh-icon vh-emoji'));
       if (marker.textContent !== displayIcon) marker.textContent = displayIcon;
     } else iconEl?.remove();
@@ -716,8 +791,18 @@
   }
   async function persistAppearance(item: Item, next: Appearance): Promise<void> {
     if(!item.uuid) return;
-    try { const ok=await req('cocos-vhierarchy','set-appearance',item.uuid,next); if(!ok)throw new Error(`Appearance rejected by extension (node ID length: ${item.uuid.length}; fields: ${Object.keys(next).join(', ')})`); }
+    // A user may choose icon, tint and recursive options faster than IPC can
+    // persist and broadcast them. Serialize full per-node commits so the latest
+    // user intent wins instead of an older response overwriting the new state.
+    const previous=appearanceWrites.get(item.uuid) || Promise.resolve();
+    const writing=previous.catch(()=>{}).then(async()=>{
+      const ok=await req('cocos-vhierarchy','set-appearance',item.uuid,next);
+      if(!ok)throw new Error(`Appearance rejected by extension (node ID length: ${item.uuid.length}; fields: ${Object.keys(next).join(', ')})`);
+    });
+    appearanceWrites.set(item.uuid,writing);
+    try { await writing; }
     catch(e){logError('appearance',e);}
+    finally { if(appearanceWrites.get(item.uuid)===writing)appearanceWrites.delete(item.uuid); }
   }
   function closePopup(): void {
     popupCleanup?.(); popupCleanup=null;
@@ -731,7 +816,10 @@
     const close=btn('×','Close vHierarchy popup',()=>closePopup(),'vh-pop-close');
     close.setAttribute('aria-label','Close');
     wrap.append(heading,close);
-    (rootHost as Document | ShadowRoot).appendChild(wrap);
+    // A Document cannot contain an arbitrary div as a direct child. Native
+    // Cocos often uses ShadowRoots, but docked/undocked panels can differ.
+    if(rootHost instanceof Document) (rootHost.body || rootHost.documentElement).appendChild(wrap);
+    else rootHost.appendChild(wrap);
     wrap.style.left=`${Math.max(8,Math.min(window.innerWidth-260,x ?? window.innerWidth/2-130))}px`;
     wrap.style.top=`${Math.max(8,Math.min(window.innerHeight-300,y ?? 68))}px`;
     pop=wrap;
@@ -762,12 +850,73 @@
     const recursive=el('label');const check=el('input') as HTMLInputElement;check.type='checkbox';check.checked=!!current.recursiveColor;
     check.addEventListener('change',()=>{current.recursiveColor=check.checked;void persistAppearance(item,{...current});});
     recursive.append(check,document.createTextNode('Apply color to descendants'));wrap.append(recursive);
-    wrap.append(el('span','','Icon'));
+    wrap.append(el('span','','Icon · Local SVG + Google Material Symbols'));
+    const search=el('input','vh-icon-search') as HTMLInputElement;
+    search.type='search';search.placeholder='Search icons (home, code, folder…)';
+    search.setAttribute('aria-label','Search icons by name');
+    const iconCount=el('div','vh-icon-count');
     const icons=el('div','vh-grid');
-    ICONS.forEach(symbol=>{ const b=btn('', 'Icon '+symbol,()=>{current.icon=symbol;void persistAppearance(item,{...current});},'vh-symbol');
-      const url=iconAssets[symbol];if(url){const im=el('img');im.src=url;im.alt=symbol;b.append(im);} else b.textContent=symbol;
-      icons.append(b); });
-    wrap.append(icons,btn('Clear icon','Remove icon',()=>{delete current.icon;current.recursiveIcon=false;void persistAppearance(item,{...current});}));
+    const allIcons=[...ICONS,...materialSymbols.map(name=>MATERIAL_PREFIX+name)];
+    const drawIconGrid=():void=>{
+      const query=search.value.trim().toLowerCase();
+      const filtered=allIcons.filter(key=>key.toLowerCase().includes(query));
+      const candidates=filtered.slice(0,72);
+      if(current.icon && filtered.includes(current.icon) && !candidates.includes(current.icon))candidates.unshift(current.icon);
+      iconCount.textContent=`${filtered.length} matching icons · showing ${candidates.length} · Google icons need internet`;
+      icons.replaceChildren();
+      for(const key of candidates) {
+        const b=btn('',key,()=>{
+          current.icon=key;
+          for(const button of icons.querySelectorAll('button'))button.setAttribute('aria-pressed',String(button===b));
+          void persistAppearance(item,{...current});
+        },'vh-symbol');
+        b.setAttribute('aria-pressed',String(current.icon===key));
+        if(key.startsWith(MATERIAL_PREFIX)) {
+          const glyph=materialGlyph(key);glyph.style.color=current.iconColor || '';
+          b.append(glyph);
+        } else if(iconAssets[key]) {
+          if(current.iconColor) {
+            const mask=el('span','vh-tinted-icon');
+            mask.style.setProperty('--vh-icon-color',current.iconColor);
+            mask.style.setProperty('--vh-icon-mask',`url("${iconAssets[key]}")`);
+            b.append(mask);
+          } else {
+            const img=el('img');img.src=iconAssets[key];img.alt='';b.append(img);
+          }
+        } else b.textContent=key;
+        icons.append(b);
+      }
+      if(!candidates.length)icons.append(el('p','vh-footer','No icons match your search.'));
+    };
+    search.addEventListener('input',drawIconGrid);
+    wrap.append(search,iconCount,icons);
+    drawIconGrid();
+    search.focus();
+    const removeIcon=btn('Clear icon','Remove icon',()=>{
+      delete current.icon;delete current.iconColor;current.recursiveIcon=false;
+      iconCheck.checked=false;drawIconGrid();void persistAppearance(item,{...current});
+    });
+    wrap.append(removeIcon);
+    const tintArea=el('div','vh-icon-palette');
+    const tintTitle=el('span','','Icon tint');
+    const iconColor=el('input') as HTMLInputElement;iconColor.type='color';
+    iconColor.value=current.iconColor || '#dce5ef';iconColor.title='Choose icon color';
+    iconColor.setAttribute('aria-label','Icon tint color');
+    const tintStatus=el('span','vh-icon-count',current.iconColor || 'Default');
+    const applyTint=(value:string|undefined):void=>{
+      if(value)current.iconColor=value;else delete current.iconColor;
+      tintStatus.textContent=current.iconColor || 'Default';
+      drawIconGrid();void persistAppearance(item,{...current});
+    };
+    iconColor.addEventListener('change',()=>applyTint(iconColor.value));
+    tintArea.append(tintTitle,iconColor,tintStatus);
+    const presets=['#ffffff','#dce5ef','#f87171','#fb923c','#facc15','#4ade80','#38bdf8','#a78bfa','#f472b6'];
+    const colorsRow=el('div','vh-icon-palette');
+    for(const color of presets) {
+      const option=btn('',`Icon tint ${color}`,()=>{iconColor.value=color;applyTint(color);},'vh-icon-preset');
+      option.style.backgroundColor=color;colorsRow.append(option);
+    }
+    wrap.append(tintArea,colorsRow,btn('Reset icon tint','Use original icon color',()=>applyTint(undefined)));
     const recursiveIcon=el('label');const iconCheck=el('input') as HTMLInputElement;iconCheck.type='checkbox';iconCheck.checked=!!current.recursiveIcon;
     iconCheck.addEventListener('change',()=>{current.recursiveIcon=iconCheck.checked;void persistAppearance(item,{...current});});
     recursiveIcon.append(iconCheck,document.createTextNode('Apply icon to descendants'));wrap.append(recursiveIcon);
@@ -863,10 +1012,11 @@
   }
   function refresh(): void {schedule();}
   function setIcons(next: Record<string,string>): void { iconAssets={...next};schedule(); }
+  function setMaterialSymbols(names: string[]): void { materialSymbols=names.filter(name=>/^[a-z0-9_]{2,48}$/.test(name));schedule(); }
   function applyState(input: State): void { if (!input?.options) return; state=input; schedule(); }
   function stats(): unknown { return { version:'0.1.0',scans,panelCount,visibleRows:views.length,vueRows,hasActiveNode:!!lastHovered?.uuid,lastError }; }
   function stop(): void {
-    stopped=true; layerLookup.dispose(); if(timer)clearInterval(timer);observer?.disconnect();closePopup();
+    stopped=true; appearanceWrites.clear(); googleFontLink?.remove();googleFontLink=null; layerLookup.dispose(); if(timer)clearInterval(timer);observer?.disconnect();closePopup();
     for (const watcher of treeObservers.values()) watcher.disconnect();
     treeObservers.clear();
     for(const release of listeners) release(); listeners.length=0;
@@ -889,7 +1039,7 @@
     }
     delete w.__vHierarchy388;
   }
-  w.__vHierarchy388={refresh,stop,stats,applyState,setIcons,showSettings,sceneNodeChanged};
+  w.__vHierarchy388={refresh,stop,stats,applyState,setIcons,setMaterialSymbols,showSettings,sceneNodeChanged};
   // A bounded periodic scan is robust to panel docking and native Vue rerendering.
   // Mutation observer only tracks opening/docking; overlays are not persisted in Vue.
   observer=new MutationObserver(()=>schedule());

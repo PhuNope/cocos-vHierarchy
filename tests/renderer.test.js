@@ -125,3 +125,30 @@ test('palette settings expose live preview and persist gradient/saturation/brigh
   assert.match(renderer,/slider\.addEventListener\('change'/);
   assert.match(renderer,/updatePreview\(\)/);
 });
+
+test('Google icon palette uses searchable allowlisted catalog with independent tint controls',()=>{
+  assert.match(renderer,/GOOGLE_MATERIAL_CSS = 'https:\/\/fonts\.googleapis\.com\/css2\?/);
+  assert.match(renderer,/setMaterialSymbols\(names\)/);
+  assert.match(renderer,/search\.type = 'search'/);
+  assert.match(renderer,/search\.addEventListener\('input', drawIconGrid\)/);
+  assert.match(renderer,/\.filter\(key => key\.toLowerCase\(\)\.includes\(query\)\)/);
+  assert.match(renderer,/candidates = filtered\.slice\(0, 72\)/);
+  assert.match(renderer,/iconColor\.type = 'color'/);
+  assert.match(renderer,/\.vh-tinted-icon \{/);
+  assert.match(renderer,/marker\.style\.color = inherited\.iconColor/);
+  assert.match(renderer,/delete current\.iconColor/);
+  assert.match(renderer,/googleFontLink\?\.remove\(\)/);
+});
+
+test('icon palette appearance commits serialized per node to avoid selection races',()=>{
+  assert.match(renderer,/appearanceWrites = new Map/);
+  assert.match(renderer,/previous\.catch\(\(\) => \{\s*\}\)\.then\(async\s+\(\) =>/);
+  assert.match(renderer,/appearanceWrites\.set\(item\.uuid, writing\)/);
+  assert.match(renderer,/appearanceWrites\.delete\(item\.uuid\)/);
+});
+
+test('popups work in both Document and ShadowRoot, not inserted directly in Document',()=>{
+  assert.match(renderer,/rootHost instanceof Document/);
+  assert.match(renderer,/rootHost\.body \|\| rootHost\.documentElement/);
+  assert.match(renderer,/else\s+rootHost\.appendChild\(wrap\)/);
+});

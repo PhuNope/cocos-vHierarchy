@@ -3,7 +3,7 @@ const fs=require('fs');
 const path=require('path');
 const cp=require('child_process');
 const root=path.join(__dirname,'..');
-const names=['package.json','README.md','dist/main.js','dist/core/model.js','dist/renderer/renderer.js','dist/renderer/guides.js','dist/renderer/scene-commands.js','dist/renderer/layers.js','dist/renderer/scenes.js','dist/renderer/colors.js',...['folder','camera','light','script','particle','physics','audio','material','prefab','canvas','settings','favorite'].map(x=>'static/icons/'+x+'.svg')];
+const names=['package.json','README.md','dist/main.js','dist/core/model.js','dist/core/material-catalog.js','dist/renderer/renderer.js','dist/renderer/guides.js','dist/renderer/scene-commands.js','dist/renderer/layers.js','dist/renderer/scenes.js','dist/renderer/colors.js',...['folder','camera','light','script','particle','physics','audio','material','prefab','canvas','settings','favorite'].map(x=>'static/icons/'+x+'.svg')];
 for(const name of names) if(!fs.existsSync(path.join(root,name))) throw new Error('Missing '+name+'; run npm run build first');
 const output=path.join(root,'vHierarchy-0.1.0-test.zip');
 const run=cp.spawnSync('python3',['-c',`import zipfile,sys,os\nwith zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED,compresslevel=9) as f:\n for n in sys.argv[3:]: f.write(os.path.join(sys.argv[2],n),'cocos-vhierarchy/'+n)`,output,root,...names],{stdio:'inherit'});

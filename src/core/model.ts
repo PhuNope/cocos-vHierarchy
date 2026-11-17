@@ -1,4 +1,5 @@
 /** Core domain objects. No Editor, Electron or DOM dependencies. */
+import { isMaterialIcon } from './material-catalog';
 export const FEATURES = [
   'navigationBar', 'activationToggle', 'hierarchyLines',
   'zebraStriping', 'minimalMode', 'sceneSelector', 'keyboardShortcuts', 'foldOnGuideClick', 'showNodeLayers', 'colorGradientsEnabled',
@@ -11,7 +12,7 @@ export interface Options extends Record<Feature, boolean> {
   colorSaturation: number;
   colorBrightness: number;
 }
-export interface Appearance { color?: number; icon?: string; recursiveColor?: boolean; recursiveIcon?: boolean; }
+export interface Appearance { color?: number; icon?: string; iconColor?: string; recursiveColor?: boolean; recursiveIcon?: boolean; }
 export interface Bookmark { uuid: string; name: string; }
 export interface State { options: Options; appearances: Record<string, Appearance>; bookmarks: Bookmark[]; }
 
@@ -50,7 +51,8 @@ export function sanitizeAppearance(input: unknown): Appearance {
   const raw = input as Record<string, unknown>;
   const out: Appearance = {};
   if (typeof raw.color === 'number' && Number.isInteger(raw.color) && raw.color >= 0 && raw.color < PALETTE.length) out.color = raw.color;
-  if (typeof raw.icon === 'string' && raw.icon.length <= 16 && (raw.icon === '' || (ICONS.includes(raw.icon) || LEGACY_ICONS.includes(raw.icon)))) out.icon = raw.icon;
+  if (typeof raw.icon === 'string' && (raw.icon === '' || ICONS.includes(raw.icon) || LEGACY_ICONS.includes(raw.icon) || isMaterialIcon(raw.icon))) out.icon = raw.icon;
+  if (typeof raw.iconColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(raw.iconColor)) out.iconColor = raw.iconColor;
   if (typeof raw.recursiveColor === 'boolean') out.recursiveColor = raw.recursiveColor;
   if (typeof raw.recursiveIcon === 'boolean') out.recursiveIcon = raw.recursiveIcon;
   return out;
@@ -93,10 +95,13 @@ export function resolveAppearance(uuid: string, ancestors: string[], data: Recor
   const current = data[uuid] ?? {};
   let inheritedColor: number | undefined;
   let inheritedIcon: string | undefined;
+  let inheritedIconColor: string | undefined;
   for (const id of ancestors) {
     const ancestor = data[id];
     if (ancestor?.recursiveColor && ancestor.color !== undefined) inheritedColor = ancestor.color;
-    if (ancestor?.recursiveIcon && ancestor.icon) inheritedIcon = ancestor.icon;
+    if (ancestor?.recursiveIcon && ancestor.icon) { inheritedIcon = ancestor.icon; inheritedIconColor = ancestor.iconColor; }
   }
-  return { ...current, color: current.color ?? inheritedColor, icon: current.icon ?? inheritedIcon };
+  const resolved: Appearance = { ...current, color: current.color ?? inheritedColor, icon: current.icon ?? inheritedIcon };
+  if (current.iconColor === undefined && !current.icon && inheritedIconColor !== undefined) resolved.iconColor = inheritedIconColor;
+  return resolved;
 }

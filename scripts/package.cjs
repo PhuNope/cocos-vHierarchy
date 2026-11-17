@@ -1,0 +1,11 @@
+'use strict';
+const fs=require('fs');
+const path=require('path');
+const cp=require('child_process');
+const root=path.join(__dirname,'..');
+const names=['package.json','README.md','dist/main.js','dist/core/model.js','dist/renderer/renderer.js'];
+for(const name of names) if(!fs.existsSync(path.join(root,name))) throw new Error('Missing '+name+'; run npm run build first');
+const output=path.join(root,'vHierarchy-0.1.0-test.zip');
+const run=cp.spawnSync('python3',['-c',`import zipfile,sys,os\nwith zipfile.ZipFile(sys.argv[1],'w',zipfile.ZIP_DEFLATED,compresslevel=9) as f:\n for n in sys.argv[3:]: f.write(os.path.join(sys.argv[2],n),'cocos-vhierarchy/'+n)`,output,root,...names],{stdio:'inherit'});
+if(run.status!==0)process.exit(run.status||1);
+console.log(output);

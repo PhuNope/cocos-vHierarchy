@@ -1,0 +1,5 @@
+node_modules/
+*.log
+*.zip
+# dist is a build artifact: tracked sources are TypeScript.
+dist/

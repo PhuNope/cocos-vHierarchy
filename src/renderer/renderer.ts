@@ -40,7 +40,7 @@
       showNodeLayers:true, colorGradientsEnabled:true, guideMode:'tree', colorBrightness:1, colorSaturation:1 }, appearances:{}, prefabAppearances:{}, bookmarks:[], customIcons:[],
   };
   const CSS = `
-    .vh-toolbar { display:flex; align-items:center; gap:4px; height:27px; padding:0 6px; box-sizing:border-box; border-bottom:1px solid var(--color-default-border, #3d454c); background:var(--color-normal-fill, #292e35); color:var(--color-normal-contrast,#ced7df); overflow:hidden; font-size:11px; }
+    .vh-toolbar { display:flex; flex:0 0 27px; align-items:center; gap:4px; height:27px; padding:0 6px; box-sizing:border-box; border-bottom:1px solid var(--color-default-border, #3d454c); background:var(--color-normal-fill, #292e35); color:var(--color-normal-contrast,#ced7df); overflow:hidden; font-size:11px; }
     .vh-brand { font-weight:700; letter-spacing:.25px; margin-right:1px; user-select:none; }
     .vh-btn { flex:0 0 auto; border:1px solid transparent; border-radius:3px; background:transparent; color:inherit; height:21px; min-width:21px; cursor:pointer; font:inherit; padding:0 4px; }
     .vh-btn:hover { border-color:#697482; background:#58616d4d; }
@@ -132,6 +132,21 @@
       padding-left:var(--vh-action-gutter-width) !important;
     }
     .tree[data-vh-lock-gutter][data-vh-quick-toggle] { --vh-action-gutter-width:42px; }
+    /* Creator 3.8.8 renders its insertion/child-drop hint in a sibling
+       .content > .drop-box, NOT inside the padded .tree. The 22/42px action
+       gutter shifts native rows but leaves that absolute sibling unshifted.
+       Compensate the *visual hint only*; never change the drop target, tree
+       coordinates, or Creator's drag/drop event handlers. Search mode already
+       forces the native marker to left:0 and width:100%, so exclude it. */
+    .content > .tree[data-vh-lock-gutter][hoving]:not([searching]) + .drop-box {
+      transform:translateX(var(--vh-action-gutter-width));
+      max-width:calc(100% - var(--vh-action-gutter-width));
+    }
+    /* The marker must render ABOVE our tinted and selected row backgrounds.
+       Creator's default z-index:0 sits underneath the table's z-index:1. */
+    .content > .tree[hoving] + .drop-box {
+      z-index:2 !important; pointer-events:none !important;
+    }
     .tree[data-vh-lock-gutter] > .tree-node > .drag-item > .vh-action-gutter {
       position:absolute; left:calc(0px - var(--vh-action-gutter-width)); top:0;
       width:var(--vh-action-gutter-width); height:100%;
@@ -669,15 +684,25 @@
     bar.append(el('div','vh-bookmarks'));
     if (state.options.sceneSelector) bar.append(btn('▤', 'Scene selector', () => { void showScenes(); }));
     bar.append(btn('⚙','vHierarchy Settings', () => showSettings()));
-    container.insertBefore(bar, container.firstChild);
+    // The native .content owns exactly the tree, drop-box and scroll-bar.
+    // Inserting a 27px toolbar there shifts the drop-box's absolute coordinate
+    // space relative to the tree and breaks Cocos drag/reorder hint geometry.
+    // Mount as a flex sibling BEFORE .content, directly in .hierarchy instead.
+    const content = container.querySelector(':scope > .content');
+    if (content) container.insertBefore(bar, content);
+    else bar.remove();
     return bar;
   }
   function renderToolbar(tree: HTMLElement): void {
-    const parent = tree.parentElement;
-    if (!parent) return;
-    const existing = parent.querySelector(':scope > .vh-toolbar');
+    const content = tree.parentElement;
+    const hierarchy = content?.parentElement;
+    if (!content || !hierarchy?.classList.contains('hierarchy') || !content.classList.contains('content')) return;
+    // Migrate an older injected toolbar out of the native scroll/drop layer.
+    const legacy = content.querySelector(':scope > .vh-toolbar') as HTMLElement | null;
+    if (legacy) hierarchy.insertBefore(legacy, content);
+    const existing = hierarchy.querySelector(':scope > .vh-toolbar');
     if (!state.options.enabled || !state.options.navigationBar) { existing?.remove(); return; }
-    const bar = findToolbar(parent);
+    const bar = findToolbar(hierarchy);
     const chips = bar.querySelector('.vh-bookmarks')!;
     const expected = state.bookmarks.map(x => x.uuid).join(',');
     if (chips.getAttribute('data-vh-ids') !== expected) {
@@ -1245,7 +1270,7 @@
     schedule();
   }
   function applyState(input: State): void { if (!input?.options) return; state=input; schedule(); }
-  function stats(): unknown { return { version:'0.1.0',scans,panelCount,visibleRows:views.length,vueRows,hasActiveNode:!!lastHovered?.uuid,lastError }; }
+  function stats(): unknown { return { version:'0.1.1',scans,panelCount,visibleRows:views.length,vueRows,hasActiveNode:!!lastHovered?.uuid,lastError }; }
   function stop(): void {
     stopped=true; appearanceWrites.clear(); prefabPromotions.clear(); googleFontLink?.remove();googleFontLink=null; layerLookup.dispose(); if(timer)clearInterval(timer);observer?.disconnect();closePopup();
     for (const watcher of treeObservers.values()) watcher.disconnect();

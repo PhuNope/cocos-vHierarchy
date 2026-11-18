@@ -78,7 +78,7 @@ class EditorHierarchyHost {
     this.poll();
     this.timer = setInterval(() => this.poll(), 1700);
     void this.refreshMaterialCatalog();
-    console.log('[vHierarchy] 0.1.0 loaded');
+    console.log('[vHierarchy] 0.1.1 loaded');
   }
   async stop(): Promise<void> {
     this.active = false;

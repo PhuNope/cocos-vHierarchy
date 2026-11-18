@@ -109,6 +109,14 @@
     .tree-node:hover > ui-drag-item.drag-item::after,
     .tree-node[is-selected='true'] > ui-drag-item.drag-item::before,
     .tree-node[is-selected='true'] > ui-drag-item.drag-item::after {opacity:1}
+    /* Native expander and both native/custom left icons must always sit above
+       the decorative guide paint. Geometry already clips the elbow to them,
+       but z-order keeps runtime transitions and drag states clean. */
+    .tree-node > .drag-item > .arrow,
+    .tree-node > .drag-item > ui-icon.arrow,
+    .tree-node > .drag-item > ui-asset-image,
+    .tree-node > .drag-item > ui-icon:not(.arrow):not(.lock):not(.edit),
+    .tree-node > .drag-item > .vh-icon { position:relative; z-index:2; }
     /* Prefab icon replacement: vHierarchy icon occupies the native icon slot.
        Cocos' original ui-asset-image/ui-icon stays in the DOM, transparent and
        overlapped so native locate-asset click/tooltip and Vue bindings survive.
@@ -145,18 +153,13 @@
       padding-left:var(--vh-action-gutter-width) !important;
     }
     .tree[data-vh-lock-gutter][data-vh-quick-toggle] { --vh-action-gutter-width:42px; }
-    /* Creator 3.8.8 renders its insertion/child-drop hint in a sibling
-       .content > .drop-box, NOT inside the padded .tree. The 22/42px action
-       gutter shifts native rows but leaves that absolute sibling unshifted.
-       Compensate the *visual hint only*; never change the drop target, tree
-       coordinates, or Creator's drag/drop event handlers. Search mode already
-       forces the native marker to left:0 and width:100%, so exclude it. */
-    .content > .tree[data-vh-lock-gutter][hoving]:not([searching]) + .drop-box {
-      /* Native x is derived from the drop target, not from painted guide rails.
-         The measured second offset aligns the dashed rail with the actual
-         parent/child guide even with different indent steps or zoom levels. */
-      transform:translateX(var(--vh-drop-guide-shift,var(--vh-action-gutter-width)));
-      max-width:calc(100% - var(--vh-drop-guide-shift,var(--vh-action-gutter-width)));
+    /* Only the dotted vertical rail moves. Keep the native horizontal bar,
+       drop-box rectangle, and all drag/drop hit testing exactly where Cocos
+       places them. The individual translate property survives
+       Cocos' inline transform styles. Creator shows the box only for [hoving],
+       so no extra [hoving] dependency is needed on the alignment itself. */
+    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .vertical-line {
+      translate:var(--vh-drop-vertical-shift,0px) 0 !important;
     }
     /* The marker must render ABOVE our tinted and selected row backgrounds.
        Creator's default z-index:0 sits underneath the table's z-index:1. */
@@ -446,10 +449,19 @@
       const rect = target.getBoundingClientRect();
       return computed.display !== 'none' && computed.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
     };
-    const children = [...drag.children];
-    const icon = children.find(child => visible(child) && (child.tagName.toLowerCase() === 'ui-icon' && !child.classList.contains('arrow') && !child.classList.contains('lock') && !child.classList.contains('edit') || child.tagName.toLowerCase() === 'ui-asset-image')) as HTMLElement | undefined;
+    const children = [...drag.children] as HTMLElement[];
+    const arrow = children.find(child => visible(child) && (child.classList.contains('arrow') || child.matches('ui-icon.arrow,.arrow'))) as HTMLElement | undefined;
+    const icon = children.find(child => visible(child) && (
+      child.classList.contains('vh-icon') ||
+      (child.tagName.toLowerCase() === 'ui-icon' && !child.classList.contains('arrow') && !child.classList.contains('lock') && !child.classList.contains('edit')) ||
+      child.tagName.toLowerCase() === 'ui-asset-image')) as HTMLElement | undefined;
     const label = children.find(child => visible(child) && child.matches('ui-rename-input.name,.name')) as HTMLElement | undefined;
-    const anchor = icon ? Math.max(0, icon.offsetLeft - 1) : label ? Math.max(0, label.offsetLeft - 1) : Math.max(0, drag.clientWidth - 12);
+    const stop = [arrow, icon, label]
+      .filter((child): child is HTMLElement => !!child)
+      .sort((a, b) => a.offsetLeft - b.offsetLeft)[0];
+    // Tree elbow must end BEFORE the first native left-side control: expander,
+    // then custom/native icon, then finally the name if neither exists.
+    const anchor = stop ? Math.max(0, stop.offsetLeft - 1) : Math.max(0, drag.clientWidth - 12);
     return { row, drag, node, uuid, name, nameEl: nameEl || null, padding:px(computed.paddingLeft), margin:px(computed.marginLeft), anchor,
       searching:!!row.closest('.tree[searching]'), depth:node?.depth ?? 0 };
   }
@@ -760,8 +772,8 @@
     const hint = tree.nextElementSibling as HTMLElement | null;
     if (!hint?.classList.contains('drop-box')) return;
     const reset = (): void => {
-      if (hint.style.getPropertyValue('--vh-drop-guide-shift'))
-        hint.style.removeProperty('--vh-drop-guide-shift');
+      if (hint.style.getPropertyValue('--vh-drop-vertical-shift'))
+        hint.style.removeProperty('--vh-drop-vertical-shift');
     };
     if (!state.options.enabled || !state.options.hierarchyLines ||
         !tree.hasAttribute('hoving') || tree.hasAttribute('searching') ||
@@ -780,8 +792,20 @@
       if (targets[mid].drag.getBoundingClientRect().top < top - 3) low=mid+1;
       else high=mid;
     }
+    // The visual insertion marker conceptually belongs to the FIRST visible
+    // row at or below it. This avoids snapping child-drop rails back onto the
+    // hovered parent row when the dashed line is rendered near the parent's
+    // bottom edge. Fall back to nearest measured row only when no lower row is
+    // available (for example at the end of the list).
     let best: Item | null = null, bestDistance = Infinity;
-    for (let i=Math.max(0,low-2); i<Math.min(targets.length,low+2); i++) {
+    for (let i=low; i<Math.min(targets.length, low+3); i++) {
+      const item=targets[i];
+      if (!item.guide || item.searching) continue;
+      best = item;
+      bestDistance = Math.abs(item.drag.getBoundingClientRect().top - top);
+      break;
+    }
+    if (!best) for (let i=Math.max(0,low-2); i<Math.min(targets.length,low+2); i++) {
       const item=targets[i];
       if (!item.guide || item.searching) continue;
       const rect=item.drag.getBoundingClientRect();
@@ -794,23 +818,24 @@
     const node = result.nodes[index];
     const step = result.layout.step;
     if (!node.valid || bestDistance > Math.max(25,step*2)) { reset(); return; }
-    const left = parseFloat(getComputedStyle(hint).left);
-    const gutter = parseFloat(getComputedStyle(tree).getPropertyValue('--vh-action-gutter-width'));
-    if (!Number.isFinite(left) || !Number.isFinite(gutter)) { reset(); return; }
-    // Native dashed line is left:-1px inside the marker. Native border
-    // coordinates are computed without our CSS translation.
-    const nativeX = content.getBoundingClientRect().left + left + gutter - 1;
     const rect = best.drag.getBoundingClientRect();
-    // When the marker sits *inside* a parent row, Creator is advertising
-    // "make child" rather than "insert before/after this sibling". In that
-    // case align to the would-be child elbow (one level deeper).
-    const childDrop = top > rect.top + 4 && top < rect.bottom - 4;
-    const elbowX = childDrop ? result.layout.base + (node.depth + .5)*step : node.elbowX;
-    const guideX = rect.left + node.offset + elbowX;
-    const delta = VHierarchyGuides.dropGuideCorrection(nativeX, guideX, step);
-    const value = `${gutter + delta}px`;
-    if (hint.style.getPropertyValue('--vh-drop-guide-shift') !== value)
-      hint.style.setProperty('--vh-drop-guide-shift',value);
+    const trunkLevel = VHierarchyGuides.dropTrunkLevel(result.nodes,index);
+    if (trunkLevel === null) { reset(); return; }
+    // Crucial: pick the actual PAINTED parent-trunk column, never a depth
+    // inferred from the already-wrong native dotted line. Example from the
+    // reported screenshot: native x=76 (beside icon), parent guide x=56.
+    const guideX = rect.left + node.offset + result.layout.base + (trunkLevel - .5) * step;
+    const vertical = hint.querySelector(':scope > .vertical-line') as HTMLElement | null;
+    if (!vertical) { reset(); return; }
+    const markerRect = vertical.getBoundingClientRect();
+    if (!markerRect.width || !markerRect.height) { reset(); return; }
+    const renderedX = markerRect.left + markerRect.width / 2;
+    const oldShift = Number.parseFloat(hint.style.getPropertyValue('--vh-drop-vertical-shift')) || 0;
+    const shift = VHierarchyGuides.dropTrunkShift(renderedX,oldShift,guideX,step);
+    if (shift === null) { reset(); return; }
+    const value = `${shift}px`;
+    if (hint.style.getPropertyValue('--vh-drop-vertical-shift') !== value)
+      hint.style.setProperty('--vh-drop-vertical-shift',value);
   }
   function syncDropGuide(tree: HTMLElement): void {
     if (dropFrames.has(tree)) return;
@@ -827,12 +852,22 @@
     tree.addEventListener('dragover',onDrag,true);
     tree.addEventListener('dragleave',onDrag,true);
     tree.addEventListener('drop',onDrag,true);
+    const hint = tree.nextElementSibling as HTMLElement | null;
+    const hintWatcher = new MutationObserver(() => syncDropGuide(tree));
+    if (hint?.classList.contains('drop-box')) {
+      hintWatcher.observe(hint, {attributes:true,attributeFilter:['style']});
+      // Cocos updates this element's native left/height style while dragging.
+      // Observing it catches asset/prefab drags even when 'dragover' doesn't
+      // pass through the ui-drag-area itself.
+      const vertical = hint.querySelector(':scope > .vertical-line');
+      if (vertical) hintWatcher.observe(vertical,{attributes:true,attributeFilter:['style']});
+    }
     dropListeners.set(tree,() => {
+      hintWatcher.disconnect();
       tree.removeEventListener('dragover',onDrag,true);
       tree.removeEventListener('dragleave',onDrag,true);
       tree.removeEventListener('drop',onDrag,true);
-      const hint = tree.nextElementSibling as HTMLElement | null;
-      if (hint?.classList.contains('drop-box')) hint.style.removeProperty('--vh-drop-guide-shift');
+      if (hint?.classList.contains('drop-box')) hint.style.removeProperty('--vh-drop-vertical-shift');
     });
   }
   function pruneDropGuides(): void {

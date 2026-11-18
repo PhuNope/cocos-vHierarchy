@@ -177,6 +177,37 @@ namespace VHierarchyGuides {
     return Math.abs(delta) <= step + 4 ? Math.round(delta * 2) / 2 : 0;
   }
 
+  /** Identify the vertical guide that belongs to the intended insertion branch.
+   * Cocos draws its dotted rail beside the target icon (at child indentation).
+   * In our hierarchy visualization, the connecting trunk is the visible
+   * parent's elbow, one depth level to the LEFT. Snapping back to the nearest
+   * level calculated from the *dotted line itself* always keeps the old error.
+   * This returns a level, not a pixel offset, so nested prefabs and non-20px
+   * indentation use the same source of truth as our painted guides. */
+  export function dropTrunkLevel(nodes: readonly Node[], targetIndex: number): number | null {
+    const node = nodes[targetIndex];
+    if (!node?.valid || node.depth < 1) return null;
+    if (node.parent !== null) {
+      const parent = nodes[node.parent];
+      if (parent?.valid && parent.depth >= 1 && parent.depth === node.depth - 1)
+        return parent.depth;
+    }
+    return node.depth;
+  }
+
+  /** Absolute visual shift based on the native rail BEFORE previous patches'
+   * translation. Returning an absolute shift (not a delta to keep accumulating)
+   * avoids jitter and drift when Vue updates the drop-box during an active drag.
+   * The Cocos native marker can be 1-4 indentation levels away, so do not
+   * artificially cap correction to a single indentation step. */
+  export function dropTrunkShift(renderedX: number, previousShift: number, targetX: number, step: number): number | null {
+    if (![renderedX, previousShift, targetX, step].every(Number.isFinite) || step < 8 || step > 40) return null;
+    const nativeX = renderedX - previousShift;
+    const correction = targetX - nativeX;
+    if (Math.abs(correction) > 4 * step + 8) return null;
+    return Math.round(correction * 2) / 2;
+  }
+
   /** Returns a visible ancestor, never a guessed parent in a filtered/virtualized tree. */
   export function foldParentIndex(nodes: Node[], childIndex: number, lineLevel: number): number | null {
     if (!Number.isInteger(lineLevel) || lineLevel < 1 ||

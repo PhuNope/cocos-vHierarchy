@@ -142,3 +142,25 @@ test('large hierarchy selection uses bounded per-depth traversal',()=>{
   assert.equal(highlighted[0].elbow,false);
   assert.ok(performance.now()-t<2000,'2500 rows should not be quadratic');
 });
+
+
+test('drop trunk targets actual parent rail, not the dotted line beside the icon',()=>{
+  const {nodes}=guides.calculate([row(0),row(1),row(2),row(3),row(2),row(1)]);
+  assert.equal(guides.dropTrunkLevel(nodes,1),1); // scene child uses own guide
+  assert.equal(guides.dropTrunkLevel(nodes,2),1); // child of Node => Node trunk
+  assert.equal(guides.dropTrunkLevel(nodes,3),2); // nested prefab => grandparent trunk
+  assert.equal(guides.dropTrunkLevel(nodes,4),1);
+  assert.equal(guides.dropTrunkLevel(nodes,0),null);
+  assert.equal(guides.dropTrunkLevel(nodes,999),null);
+});
+test('drop rail x76 snaps to painted parent guide x56 and does not accumulate on redraw',()=>{
+  const first=guides.dropTrunkShift(76,0,56,20);
+  assert.equal(first,-20);
+  assert.equal(guides.dropTrunkShift(76+first,first,56,20),-20);
+  assert.equal(guides.dropTrunkShift(76,0,56,20),-20);
+  // Native offset changes while dragging into another parent.
+  assert.equal(guides.dropTrunkShift(96,-20,76,20),-40);
+  assert.equal(guides.dropTrunkShift(55.7,0,56,20),.5);
+  assert.equal(guides.dropTrunkShift(76,0,156,20),80); // > one-indent allowed
+  assert.equal(guides.dropTrunkShift(76,0,400,20),null); // suspicious geometry
+});

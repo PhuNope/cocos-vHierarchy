@@ -179,3 +179,20 @@ test('palette swatch gets a visible persistent checkmark and inherited distincti
   assert.match(renderer,/current\.color\s*=\s*i;\s*refreshColorSelection\(\)/);
   assert.match(renderer,/delete current\.color;\s*current\.recursiveColor\s*=\s*false;\s*check\.checked\s*=\s*false;\s*refreshColorSelection\(\)/);
 });
+
+
+test('guide elbow stops before native expander or custom icon instead of crossing them',()=>{
+  assert.match(renderer,/const arrow = children\.find\(child => visible\(child\) && \(child\.classList\.contains\('arrow'\) \|\| child\.matches\('ui-icon\.arrow,\.arrow'\)\)\)/);
+  assert.match(renderer,/child\.classList\.contains\('vh-icon'\)/);
+  assert.match(renderer,/const stop = \[arrow, icon, label\]/);
+  assert.match(renderer,/sort\(\(a, b\) => a\.offsetLeft - b\.offsetLeft\)\[0\]/);
+  assert.match(renderer,/const anchor = stop \? Math\.max\(0, stop\.offsetLeft - 1\) : Math\.max\(0, drag\.clientWidth - 12\)/);
+});
+
+test('decorative guide paint stays under expander and icon visuals during hover and drag',()=>{
+  assert.match(renderer,/Native expander and both native\/custom left icons must always sit above/);
+  assert.match(renderer,/\.tree-node > \.drag-item > \.arrow,/);
+  assert.match(renderer,/\.tree-node > \.drag-item > ui-icon\.arrow,/);
+  assert.match(renderer,/\.tree-node > \.drag-item > ui-asset-image,/);
+  assert.match(renderer,/\.tree-node > \.drag-item > \.vh-icon \{ position:relative; z-index:2; \}/);
+});

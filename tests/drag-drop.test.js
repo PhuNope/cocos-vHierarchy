@@ -130,7 +130,7 @@ test('native horizontal insertion line is painted once at the dotted trunk witho
   assert.match(renderer,/\.tree\[data-vh-lock-gutter\]\[data-vh-quick-toggle\]:not\(\[searching\]\) \+ \.drop-box > \.vertical-line \{\s*translate:20px 0 !important/);
   assert.match(renderer,/border-color:transparent !important/);
   assert.match(renderer,/\.content > \.tree\[hoving\] \+ \.drop-box \{\s*z-index:2 !important; pointer-events:none !important/);
-  assert.match(renderer,/\.drop-box > \.horizontal-line \{\s*translate:var\(--vh-drop-rail-start\) 0 !important/);
+  assert.match(renderer,/\.drop-box > \.horizontal-line \{\s*visibility:hidden !important/);
   assert.match(renderer,/background-position:left bottom !important/);
   assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*transform:translateX/);
   assert.match(renderer,/--vh-action-gutter-width:22px/);
@@ -170,7 +170,7 @@ test('guide shortcuts never cancel mousedown or pointerdown required for native 
   assert.match(renderer,/root\.removeEventListener\('click', guideClick, true\)/);
 });
 test('new plugin build replaces a stale renderer instead of reusing its old CSS',()=>{
-  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch34-single-drop-line'/);
+  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch35-drop-intent'/);
   assert.match(renderer,/if \(w\.__vHierarchy388\.buildId === BUILD_ID\)/);
   assert.match(renderer,/w\.__vHierarchy388\.stop\(\)/);
   assert.match(renderer,/delete w\.__vHierarchy388/);
@@ -189,18 +189,18 @@ test('drag dotted rail aligns to guide trunk instead of custom prefab icon for b
   assert.equal(expectedPaintedRail(true),55);
   assert.equal(expectedPaintedRail(false),35);
   assert.notEqual(expectedPaintedRail(true),75, 'must not move one indent too far toward icon');
-  assert.match(renderer,/It starts exactly on the corrected dotted vertical child rail/);
+  assert.match(renderer,/Classify the native marker from its rendered height/);
   assert.doesNotMatch(renderer,/translate:40px 0 !important/);
   assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*translate:/);
-  assert.match(renderer,/\.drop-box > \.horizontal-line \{\s*translate:var\(--vh-drop-rail-start\) 0 !important/);
+  assert.match(renderer,/\.drop-box > \.horizontal-line \{\s*visibility:hidden !important/);
   assert.match(renderer,/background-position:left bottom !important/);
 });
 
 
-// Regression for screenshot where both a cyan bar at the top and a second cyan
-// bar at the intended drop boundary were visible. The old ::before + native
-// two-sided border combination must never return.
-test('one horizontal rule at the bottom of short and tall native drop boxes',()=>{
+// Regression for screenshot with two cyan bars, one at the root of the
+// parent's subtree and another at the insertion boundary. Tall markers are
+// PARENT targets; a short marker represents a sibling INSERT only.
+test('short native marker draws one insertion line; tall marker instead highlights the parent row',()=>{
   assert.match(renderer,/background-image:linear-gradient\(90deg,/);
   assert.match(renderer,/transparent calc\(var\(--vh-drop-rail-start\) \+ 1px\)/);
   assert.match(renderer,/var\(--color-focus-border\) calc\(var\(--vh-drop-rail-start\) \+ 1px\)/);
@@ -212,7 +212,9 @@ test('one horizontal rule at the bottom of short and tall native drop boxes',()=
   assert.match(renderer,/\.drop-box::before \{\s*content:none !important/);
   assert.doesNotMatch(renderer,/\.drop-box::before \{[^}]*height:2px/);
   assert.doesNotMatch(renderer,/\.drop-box::before \{[^}]*background:var\(--color-focus-border\)/);
-  assert.match(renderer,/\.drop-box > \.horizontal-line \{\s*translate:var\(--vh-drop-rail-start\) 0 !important/);
+  assert.match(renderer,/\.drop-box > \.horizontal-line \{\s*visibility:hidden !important/);
+  assert.match(renderer,/\.drop-box\[data-vh-drop-mode='parent'\] \{\s*background-image:none !important/);
+  assert.match(renderer,/\.tree-node\[data-vh-drop-parent\] > \.drag-item \{/);
   assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*transform:translateX/);
   // Source geometry for native marker: border box starts x34, dotted child
   // left x35. Only the optional Active column shifts both junctions +20.
@@ -230,4 +232,124 @@ test('native Cocos pointer/drop handling and unrelated search marker remain inta
   assert.doesNotMatch(renderer,/addEventListener\(['"]dragover['"]/);
   assert.doesNotMatch(renderer,/addEventListener\(['"]mousedown['"],\s*guideDown/);
   assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*pointer-events:auto/);
+});
+
+function dropIntentHelpers() {
+  const start=renderer.indexOf('function dropMode(');
+  const end=renderer.indexOf('function clearDropTarget(',start);
+  assert.ok(start>0 && end>start,'compiled drop-intent helpers available');
+  const ctx={};
+  vm.runInNewContext(renderer.slice(start,end)+'\nthis.dropMode=dropMode;this.dropParentIndex=dropParentIndex;',ctx);
+  return ctx;
+}
+test('native height differentiates sibling insertion from hovering a full parent/subtree',()=>{
+  const {dropMode}=dropIntentHelpers();
+  assert.equal(dropMode(2,20),'insert');
+  assert.equal(dropMode(3,20),'insert');
+  assert.equal(dropMode(20,20),'parent');
+  assert.equal(dropMode(102,20),'parent');
+  assert.equal(dropMode(120,24),'parent');
+});
+test('parent highlight selects hovered actual parent, not a child from the box top or bottom',()=>{
+  const {dropParentIndex}=dropIntentHelpers();
+  // Screenshot: box from y46 to y146; hover is Node y146. The old code
+  // highlighted only a child insertion line and never the hovered parent.
+  const rows=[
+    {top:46,bottom:66,hovered:false},
+    {top:66,bottom:86,hovered:false},
+    {top:86,bottom:106,hovered:false},
+    {top:106,bottom:126,hovered:false},
+    {top:126,bottom:146,hovered:false},
+    {top:146,bottom:166,hovered:true},
+  ];
+  assert.equal(dropParentIndex(rows,46,146),5);
+  assert.equal(dropParentIndex(rows,46,146),5,'no spontaneous jump between siblings');
+  assert.equal(dropParentIndex(rows.map(r=>({...r,hovered:false})),46,146),0,
+    'Assets drag without hover uses top of marker, not unrelated descendant');
+  assert.equal(dropParentIndex(rows.map(r=>({...r,hovered:false})),400,500),-1);
+});
+test('parent mode has complete row/gutter highlight, insertion-only keeps one bottom line',()=>{
+  assert.match(renderer,/\.drop-box\[data-vh-drop-mode='parent'\] \{\s*background-image:none !important/);
+  assert.match(renderer,/\.drop-box\[data-vh-drop-mode='parent'\] > \.vertical-line/);
+  assert.match(renderer,/\.tree-node\[data-vh-drop-parent\] > \.drag-item \{\s*background-color:rgba\(34,143,178,\.3\) !important/);
+  assert.match(renderer,/\.tree-node\[data-vh-drop-parent\] > \.drag-item > \.vh-action-gutter/);
+  assert.match(renderer,/box-shadow:inset 0 0 0 1px var\(--color-focus-border,#47bdf1\) !important/);
+  assert.match(renderer,/background-position:left bottom !important/);
+  assert.doesNotMatch(renderer,/\.drop-box::before \{[^}]*height:2px/);
+});
+test('drop marker style mutations schedule a visual-only update and cleanup cancels it',()=>{
+  assert.match(renderer,/watcher.observe\(box,\s*\{\s*attributes:\s*true,\s*attributeFilter:\s*\['style'\]\s*\}\)/);
+  assert.match(renderer,/watcher.observe\(tree,\s*\{\s*attributes:\s*true,\s*attributeFilter:\s*\['hoving',\s*'searching'\]\s*\}\)/);
+  assert.match(renderer,/requestAnimationFrame\(\(\) => \{/);
+  assert.match(renderer,/clearDropTarget\(tree,\s*entry.box\)/);
+  assert.match(renderer,/entry.watcher.disconnect\(\)/);
+  assert.match(renderer,/parent.removeAttribute\('data-vh-drop-parent'\)/);
+  assert.match(renderer,/box.removeAttribute\('data-vh-drop-mode'\)/);
+  assert.doesNotMatch(renderer,/addEventListener\(['"]dragover['"]/);
+  assert.doesNotMatch(renderer,/addEventListener\(['"]mousedown['"],\s*guideDown/);
+});
+
+test('parent drop mode highlights the hovered parent row, then clears it when switching to reorder',()=>{
+  const start=renderer.indexOf('function clearDropTarget(');
+  const end=renderer.indexOf('function observeDropTarget(',start);
+  assert.ok(start>0&&end>start);
+  const boxAttrs=new Map();
+  const makeRow=(id,top,hovered)=>({
+    id, attrs:new Map(),
+    matches:q=>q===':hover'&&hovered,
+    querySelector:q=>q===':scope > .drag-item'?{getBoundingClientRect:()=>({top,bottom:top+20,height:20})}:null,
+    setAttribute(k,v){this.attrs.set(k,v);},removeAttribute(k){this.attrs.delete(k);},
+  });
+  const child=makeRow('child',126,false);
+  const parent=makeRow('parent',146,true);
+  const first=makeRow('scene',46,false);
+  const nodes=[first,makeRow('light',66,false),makeRow('camera',86,false),makeRow('path',106,false),child,parent];
+  const box={
+    attrs:boxAttrs,
+    height:102,
+    setAttribute(k,v){boxAttrs.set(k,v);},removeAttribute(k){boxAttrs.delete(k);},
+    getBoundingClientRect(){return {left:35,top:46,bottom:46+this.height,width:400,height:this.height};},
+  };
+  const tree={
+    isConnected:true,
+    hovering:true,
+    hasAttribute:k=>k==='data-vh-lock-gutter'||(k==='hoving'&&tree.hovering),
+    querySelector:q=>q===':scope > .tree-node > .drag-item'?{getBoundingClientRect:()=>({height:20})}:
+      q===':scope > .tree-node:hover'?parent:null,
+    querySelectorAll:q=>q===':scope > .tree-node'?nodes:[],
+  };
+  const dropObservers=new Map([[tree,{box,parent:null}]]);
+  const {dropMode,dropParentIndex}=dropIntentHelpers();
+  const scope={stopped:false,state:{options:{enabled:true}},dropObservers,dropMode,dropParentIndex,
+    getComputedStyle:()=>({display:'block'})};
+  vm.runInNewContext(renderer.slice(start,end)+'\nthis.updateDropTarget=updateDropTarget;',scope);
+  scope.updateDropTarget(tree,box);
+  assert.equal(boxAttrs.get('data-vh-drop-mode'),'parent');
+  assert.equal(parent.attrs.get('data-vh-drop-parent'),'true');
+  assert.equal(child.attrs.has('data-vh-drop-parent'),false);
+  box.height=2;scope.updateDropTarget(tree,box);
+  assert.equal(boxAttrs.get('data-vh-drop-mode'),'insert');
+  assert.equal(parent.attrs.has('data-vh-drop-parent'),false);
+  box.height=102;scope.updateDropTarget(tree,box);
+  assert.equal(parent.attrs.get('data-vh-drop-parent'),'true');
+  tree.hovering=false;scope.updateDropTarget(tree,box);
+  assert.equal(boxAttrs.has('data-vh-drop-mode'),false);
+  assert.equal(parent.attrs.has('data-vh-drop-parent'),false);
+});
+
+test('insertion hints do not enumerate every node or change native drag events',()=>{
+  const start=renderer.indexOf('function clearDropTarget(');
+  const end=renderer.indexOf('function observeDropTarget(',start);
+  const mode=dropIntentHelpers();
+  const box={attrs:new Map(),setAttribute(k,v){this.attrs.set(k,v);},removeAttribute(k){this.attrs.delete(k);},
+    getBoundingClientRect:()=>({width:420,height:2,top:100,bottom:102})};
+  const tree={isConnected:true,hasAttribute:k=>k==='hoving'||k==='data-vh-lock-gutter',
+    querySelector:q=>q===':scope > .tree-node > .drag-item'?{getBoundingClientRect:()=>({height:20})}:null,
+    querySelectorAll:()=>{throw Error('short insertion markers must not enumerate all nodes');}};
+  const dropObservers=new Map([[tree,{box,parent:null}]]);
+  const scope={stopped:false,state:{options:{enabled:true}},dropObservers,...mode,
+    getComputedStyle:()=>({display:'block'})};
+  vm.runInNewContext(renderer.slice(start,end)+'\nthis.updateDropTarget=updateDropTarget;',scope);
+  scope.updateDropTarget(tree,box);
+  assert.equal(box.attrs.get('data-vh-drop-mode'),'insert');
 });

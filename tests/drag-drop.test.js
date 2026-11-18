@@ -149,7 +149,7 @@ test('native Cocos horizontal border is untouched and actual vHierarchy vertical
   assert.match(renderer,/background-size:var\(--vh-guide-drop-sizes\) !important/);
   assert.match(renderer,/border-left-color:transparent !important/);
   assert.match(renderer,/border-bottom-color:transparent !important/);
-  assert.match(renderer,/background-size:1px 100%,100% 1px !important/);
+  assert.match(renderer,/background-size:100% 1px !important/);
   assert.doesNotMatch(renderer,/border-left-style:dashed !important/);
   assert.match(renderer,/\.drop-box\[data-vh-node-outline='true'\]::before/);
   assert.match(renderer,/\.drop-box\[data-vh-node-outline='true'\] > \.horizontal-line \{\s*visibility:hidden !important/);
@@ -202,7 +202,7 @@ test('legacy drop markup is removed when upgrading from Patch 36, not reintroduc
 
 test('native Cocos retains its original parent and sibling drop target',()=>{
   assert.match(renderer,/The HORIZONTAL drop border and parent outline are 100% native Cocos/);
-  assert.match(renderer,/const borderY\s*=/);
+  assert.match(renderer,/const nativeBorder\s*=/);
   assert.match(renderer,/function drawDottedGuideRow\(/);
   assert.doesNotMatch(renderer,/const nativeParentArea/);
   assert.doesNotMatch(renderer,/dropMode\(pointer/);
@@ -229,7 +229,7 @@ test('guide shortcuts never cancel mousedown or pointerdown required for native 
 });
 
 test('new plugin build replaces stale renderer and CSS',()=>{
-  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch42-dotted-node-outline'/);
+  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch43-ancestor-drop-path'/);
   assert.match(renderer,/if \(w\.__vHierarchy388\.buildId === BUILD_ID\)/);
   assert.match(renderer,/w\.__vHierarchy388\.stop\(\)/);
   assert.match(renderer,/delete w\.__vHierarchy388/);
@@ -244,65 +244,88 @@ test('regular tree updates still detect native expand/select without drag observ
   assert.doesNotMatch(renderer,/MutationObserver\(\(\) => requestDropUpdate/);
 });
 
-test('center-node hover dashes existing path and bottom hover extends to insertion border',()=>{
+test('four-level hover paints every parent-child vertical half and the target elbow',()=>{
   const start=renderer.indexOf('const DROP_DASH_IMAGE =');
   const end=renderer.indexOf('function observeNativeDropPaint(tree) {',start);
   assert.ok(start>0&&end>start);
-  function el(top,bottom){
+  function el(top,bottom,left=50,right=450){
     const a=new Map(),s=new Map();
     return {
       a,s,hasAttribute:k=>a.has(k),getAttribute:k=>a.get(k)||null,
       setAttribute:(k,v)=>a.set(k,v),removeAttribute:k=>a.delete(k),
       matches:()=>false,
       style:{getPropertyValue:k=>s.get(k)||'',setProperty:(k,v)=>s.set(k,v),removeProperty:k=>s.delete(k)},
-      getBoundingClientRect:()=>({top,bottom,height:bottom-top,left:20}),
+      getBoundingClientRect:()=>({top,bottom,left,right,height:bottom-top,width:right-left}),
     };
   }
-  const tree=el(0,300),root=el(80,100),child=el(100,120),box=el(100,120);
+  const tree=el(0,300),box=el(140,160,0,450);
   tree.classList={contains:k=>k==='tree'};
   tree.setAttribute('hoving','');
-  root.parentElement=tree;child.parentElement=tree;
-  root.setAttribute('data-vh-elbow','true');child.setAttribute('data-vh-elbow','true');
   box.previousElementSibling=tree;
-  const result={nodes:[{valid:true,depth:1,indent:60,offset:0},
-    {valid:true,depth:2,indent:80,offset:0}],layout:{base:19,step:20}};
-  const items=[root,child].map((row,index)=>({
-    row,drag:el(index===0?80:100,index===0?100:120),
-    guidePaint:[{level:index+1,image:'linear-gradient(gray,gray)',position:'49px top',size:'1px 100%'}],
-    guide:{group:null,index,result},
+  const nodes=[0,1,2,3,4].map(depth=>({
+    valid:true,depth,indent:20+20*depth,offset:0,parent:depth?depth-1:null,
   }));
+  const result={nodes,layout:{base:19,step:20}};
+  const items=nodes.map((node,index)=>{
+    const row=el(80+index*20,100+index*20);
+    row.parentElement=tree;
+    if(index)row.setAttribute('data-vh-elbow','true');
+    return {row,drag:el(80+index*20,100+index*20),
+      guidePaint:index?[{level:index,image:'linear-gradient(gray,gray)',position:'20px top',size:'1px 100%'}]:[],
+      guide:{group:null,index,result},
+    };
+  });
   for(const item of items)item.guide.group=items;
-  const nativeDropHover=new WeakMap([[tree,{row:child,y:110}]]);
-  const env={state:{options:{enabled:true,hierarchyLines:true}},views:items,
-    nativeDropHover,nativeDropPaintedRows:new Map(),
-    VHierarchyGuides:{selectedGuides:()=>[{rails:[1],elbow:true},{rails:[2],elbow:true}]}};
+  const nativeDropHover=new WeakMap([[tree,{row:items[3].row,y:150}]]);
+  const env={state:{options:{enabled:true,hierarchyLines:true}},
+    views:items,nativeDropHover,nativeDropPaintedRows:new Map()};
   vm.runInNewContext(renderer.slice(start,end)+'\nthis.sync=syncNativeDropPaint;',env);
-  env.sync(box);
-  assert.equal(root.a.get('data-vh-drop-dashed'),'true');
-  assert.equal(child.a.get('data-vh-drop-dashed'),'true');
-  assert.equal(child.a.get('data-vh-drop-dashed-elbow'),'true');
-  assert.equal(tree.a.get('data-vh-dotted-native-replaced'),'true');
-  assert.match(child.s.get('--vh-guide-drop-images'),/repeating-linear-gradient/);
 
-  nativeDropHover.set(tree,{row:child,y:119});
   env.sync(box);
-  assert.match(child.s.get('--vh-guide-drop-sizes'),/1px 10px/);
-  assert.match(child.s.get('--vh-guide-drop-positions'),/49px 10px/);
+  for(let i=0;i<=3;i++){
+    assert.equal(items[i].row.a.get('data-vh-drop-dashed'),'true','level '+i+' has dotted path');
+    assert.match(items[i].row.s.get('--vh-guide-drop-images'),/repeating-linear-gradient/);
+  }
+  assert.equal(items[1].row.s.get('--vh-guide-drop-sizes'),'1px 10px, 1px 10px');
+  assert.equal(items[2].row.s.get('--vh-guide-drop-sizes'),'1px 10px, 1px 10px');
+  assert.equal(items[3].row.a.get('data-vh-drop-dashed-elbow'),'true');
+  assert.equal(box.a.get('data-vh-node-outline'),'true');
+  assert.equal(items[4].row.a.has('data-vh-drop-dashed'),false);
+
+  // Inserting below a deeply nested parent extends the branch to the native
+  // bottom insertion border, including descendants the previous patch omitted.
+  nativeDropHover.set(tree,{row:items[3].row,y:159});
+  box.getBoundingClientRect=()=>({top:140,bottom:180,left:0,right:450,height:40,width:450});
+  env.sync(box);
+  assert.equal(box.a.has('data-vh-node-outline'),false);
+  assert.equal(items[4].row.a.get('data-vh-drop-dashed'),'true');
+  assert.match(items[4].row.s.get('--vh-guide-drop-sizes'),/1px 20px/);
+  assert.match(items[3].row.s.get('--vh-guide-drop-sizes'),/1px 20px/);
+
+  // Inserting before same node stops at its TOP border; do not paint an
+  // unrelated dotted route through the destination node itself.
+  nativeDropHover.set(tree,{row:items[3].row,y:141});
+  box.getBoundingClientRect=()=>({top:140,bottom:160,left:0,right:450,height:20,width:450});
+  env.sync(box);
+  assert.equal(items[2].row.a.get('data-vh-drop-dashed'),'true');
+  assert.equal(items[3].row.a.has('data-vh-drop-dashed'),false);
+  assert.equal(items[4].row.a.has('data-vh-drop-dashed'),false);
 
   tree.removeAttribute('hoving');
   env.sync(box);
+  for(const item of items){
+    assert.equal(item.row.a.has('data-vh-drop-dashed'),false);
+    assert.equal(item.row.a.has('data-vh-drop-dashed-elbow'),false);
+    assert.equal(item.row.s.has('--vh-guide-drop-images'),false);
+  }
+  assert.equal(box.a.has('data-vh-node-outline'),false);
   assert.equal(tree.a.has('data-vh-dotted-native-replaced'),false);
-  assert.equal(root.a.has('data-vh-drop-dashed'),false);
-  assert.equal(child.a.has('data-vh-drop-dashed'),false);
-  assert.equal(child.a.has('data-vh-drop-dashed-elbow'),false);
-  assert.equal(child.s.has('--vh-guide-drop-positions'),false);
-  assert.equal(child.s.has('--vh-guide-drop-sizes'),false);
 });
 
 test('passive dragover observes position only; does not change native drop actions',()=>{
   assert.match(renderer,/tree\.addEventListener\('dragover', passiveDragOver, \{ capture: true, passive: true \}\)/);
   assert.match(renderer,/tree\.removeEventListener\('dragover', handler, true\)/);
-  assert.match(renderer,/const borderY/);
+  assert.match(renderer,/const nativeBorder/);
   assert.match(renderer,/function drawDottedGuideRow/);
   const a=renderer.indexOf('const passiveDragOver =');
   const b=renderer.indexOf("tree.addEventListener('dragover', passiveDragOver",a);
@@ -312,10 +335,10 @@ test('passive dragover observes position only; does not change native drop actio
 });
 
 
-test('center hover paints a short dotted node outline excluding left actions and right metadata',()=>{
+test('center-node outline is SOLID from nested branch to far right, excluding Lock and Active',()=>{
   const start=renderer.indexOf('function clearNodeOutline(box) {');
   const end=renderer.indexOf('function clearNativeDropPaint(box) {',start);
-  assert.ok(start>0&&end>start,'compiled outline helper is available');
+  assert.ok(start>0&&end>start);
   const attrs=new Map(),css=new Map();
   const box={
     hasAttribute:k=>attrs.has(k),getAttribute:k=>attrs.get(k)||null,
@@ -327,37 +350,34 @@ test('center hover paints a short dotted node outline excluding left actions and
     },
   };
   const target={
-    name:'Camera',anchor:40,
     drag:{getBoundingClientRect:()=>({left:53})},
-    nameEl:{getBoundingClientRect:()=>({left:108,right:400})},
+    guide:{index:3,result:{nodes:[null,null,null,{depth:3,offset:0,valid:true}],
+      layout:{base:19,step:20}}},
   };
-  const env={NODE_OUTLINE_PROPS:[
-    '--vh-node-outline-left','--vh-node-outline-top',
-    '--vh-node-outline-width','--vh-node-outline-height',
-  ]};
-  vm.runInNewContext(renderer.slice(start,end)+
-    '\nthis.sync=syncNodeOutline;this.clear=clearNodeOutline;',env);
+  const env={};
+  vm.runInNewContext(renderer.slice(start,end)+'\nthis.sync=syncNodeOutline;this.clear=clearNodeOutline;',env);
   env.sync(box,target,
     {left:0,top:95,right:463,bottom:215},
     {left:53,top:115,right:463,bottom:135});
   assert.equal(attrs.get('data-vh-node-outline'),'true');
-  assert.equal(css.get('--vh-node-outline-left'),'52px');
+  assert.equal(css.get('--vh-node-outline-left'),'120px');
   assert.equal(css.get('--vh-node-outline-top'),'18px');
   assert.equal(css.get('--vh-node-outline-height'),'20px');
-  const width=parseFloat(css.get('--vh-node-outline-width'));
-  assert.ok(width>=75&&width<280,'outline is limited to the visible node, not 463px row');
+  assert.equal(css.get('--vh-node-outline-width'),'340px');
   env.clear(box);
   assert.equal(attrs.has('data-vh-node-outline'),false);
   assert.equal(css.size,0);
 });
 
-test('parent outline uses four matching dotted gradients; sibling horizontal indicator remains Cocos-native',()=>{
+test('node outline has solid border but sibling horizontal insertion stays Cocos native',()=>{
   assert.match(renderer,/\.drop-box\[data-vh-node-outline='true'\] \{\s*border-color:transparent !important/);
-  assert.match(renderer,/background-position:left top,left bottom,left top,right top/);
-  assert.match(renderer,/background-size:100% 2px,100% 2px,2px 100%,2px 100%/);
+  assert.match(renderer,/border:1px solid var\(--color-focus-border,#47bdf1\)/);
+  assert.match(renderer,/background:none !important/);
+  assert.match(renderer,/const branchX\s*=/);
   assert.match(renderer,/if \(centerHover\)\s*syncNodeOutline\(box, target, nativeRect, targetRect\)/);
   assert.match(renderer,/else\s*clearNodeOutline\(box\)/);
   assert.match(renderer,/function clearNativeDropPaint\(box\) \{\s*clearNodeOutline\(box\)/);
   assert.match(renderer,/\.content > \.tree\[hoving\] \+ \.drop-box \{\s*z-index:2 !important; pointer-events:none !important/);
   assert.doesNotMatch(renderer,/\.drop-box\[data-vh-thin-insert='true'\]/);
+  assert.doesNotMatch(renderer,/\.drop-box > \.horizontal-line \{\s*translate:/);
 });

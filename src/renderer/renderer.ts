@@ -16,7 +16,7 @@
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch40-guide-line-dash';
+  const BUILD_ID = '0.1.1-patch41-drag-path-dashes';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -182,6 +182,9 @@
        not another vertical line stacked on top of the solid vHierarchy rail. */
     .tree[hoving] > .tree-node[data-vh-drop-dashed='true'] > ui-drag-item.drag-item::before {
       background-image:var(--vh-guide-drop-images) !important;
+      background-position:var(--vh-guide-drop-positions) !important;
+      background-size:var(--vh-guide-drop-sizes) !important;
+      width:var(--vh-guide-drop-width,var(--vh-guide-width)) !important;
       opacity:1 !important;
     }
     .tree[hoving] > .tree-node[data-vh-drop-dashed-elbow='true'] > ui-drag-item.drag-item::after {
@@ -381,6 +384,9 @@
   const treeObservers = new Map<HTMLElement, MutationObserver>();
   const nativeDropPaintWatchers = new Map<HTMLElement, MutationObserver>();
   const nativeDropPaintedRows = new Map<HTMLElement, Set<HTMLElement>>();
+  const nativeDropHover = new WeakMap<HTMLElement, {row:HTMLElement; y:number}>();
+  const nativeDropDragListeners = new Map<HTMLElement, (e:DragEvent)=>void>();
+  const nativeDropPendingFrames = new WeakSet<HTMLElement>();
   const layerLookup = new VHierarchyLayers.Lookup(uuid => req('scene','query-node', uuid), () => schedule());
   const prefabPromotions = new Set<string>();
   const priorRows = new WeakMap<HTMLElement, {uuid: string; path: string; appearance: Appearance}>();
@@ -805,103 +811,162 @@
   /** Watch native Vue tree changes so guides render in the expand frame, not at
    * the 1.4s resilience polling interval. Ignore changes from our own controls. */
   const DROP_DASH_IMAGE='repeating-linear-gradient(to bottom, var(--color-focus-border,#47bdf1) 0px, var(--color-focus-border,#47bdf1) 2px, transparent 2px, transparent 5px)';
+  const DROP_GUIDE_PROPS=['--vh-guide-drop-images','--vh-guide-drop-positions',
+    '--vh-guide-drop-sizes','--vh-guide-drop-width'];
   function clearNativeDropPaint(box: HTMLElement): void {
     for (const row of nativeDropPaintedRows.get(box) || []) {
       row.removeAttribute('data-vh-drop-dashed');
       row.removeAttribute('data-vh-drop-dashed-elbow');
-      row.style.removeProperty('--vh-guide-drop-images');
+      for (const prop of DROP_GUIDE_PROPS) row.style.removeProperty(prop);
+      const item=views.find(view=>view.row===row);
+      if (!item?.guidePaint?.length) row.removeAttribute('data-vh-guide');
     }
     nativeDropPaintedRows.delete(box);
     const tree=box.previousElementSibling as HTMLElement|null;
     if (tree?.hasAttribute('data-vh-dotted-native-replaced'))
       tree.removeAttribute('data-vh-dotted-native-replaced');
-    // Clean up style remnants of Patch 39.
     if (box.hasAttribute('data-vh-thin-insert'))
       box.removeAttribute('data-vh-thin-insert');
     if (box.style.getPropertyValue('--vh-insert-rail-x'))
       box.style.removeProperty('--vh-insert-rail-x');
   }
-  /** Read the native dashed-rail position; convert only the original vH
-   * line for that branch from solid to dashed. Never classify parent/sibling
-   * using drop-box height, and never draw over the native horizontal bar. */
+  /** Replace existing solid guide layers with dotted ones, optionally extending
+   * the last guide segment to a native insertion border. No extra DOM line. */
+  function drawDottedGuideRow(item: Item, levels: ReadonlySet<number>,
+    tail: {level:number; startY:number; endY:number}|null, elbow:boolean): boolean {
+    const row=item.row, geometry=item.guide;
+    if (!geometry) return false;
+    const {result,index}=geometry;
+    const entry=result.nodes[index];
+    if (!entry?.valid || entry.depth<1) return false;
+    const dragRect=item.drag.getBoundingClientRect();
+    const dash=new Set(levels);
+    const layers=(item.guidePaint||[]).map(p=>({
+      level:p.level,image:dash.has(p.level)?DROP_DASH_IMAGE:p.image,
+      position:p.position,size:p.size,
+    }));
+    let width=entry.indent;
+    const paintX=(level:number):number => result.layout.base+(level-.5)*result.layout.step;
+    for (const level of dash) {
+      const x=paintX(level);
+      if (x<=1 || x>entry.indent+result.layout.step+4) continue;
+      width=Math.max(width,x+2);
+      if (!layers.some(p=>p.level===level))
+        layers.unshift({level,image:DROP_DASH_IMAGE,position:x+'px top',size:'1px 100%'});
+    }
+    if (tail) {
+      const x=paintX(tail.level);
+      const from=Math.max(0,Math.min(dragRect.height,tail.startY-dragRect.top));
+      const to=Math.max(0,Math.min(dragRect.height,tail.endY-dragRect.top));
+      if (to>from+0.5 && x>1 && x<=entry.indent+result.layout.step+4) {
+        width=Math.max(width,x+2);
+        const matching=layers.filter(p=>p.level===tail.level);
+        const line={level:tail.level,image:DROP_DASH_IMAGE,
+          position:x+'px '+(Math.round(from*2)/2)+'px',
+          size:'1px '+(Math.round((to-from)*2)/2)+'px'};
+        if (matching.length) {
+          // Substitute, never paint dots above a still-solid guide.
+          for (const part of matching) Object.assign(part,line);
+        } else layers.unshift(line);
+        dash.add(tail.level);
+      }
+    }
+    const dashed=layers.some(p=>dash.has(p.level));
+    if (dashed) {
+      const desired: Record<string,string>={
+        '--vh-guide-drop-images':layers.map(p=>p.image).join(', '),
+        '--vh-guide-drop-positions':layers.map(p=>p.position).join(', '),
+        '--vh-guide-drop-sizes':layers.map(p=>p.size).join(', '),
+        '--vh-guide-drop-width':width+'px',
+      };
+      for (const prop of DROP_GUIDE_PROPS)
+        if (row.style.getPropertyValue(prop)!==desired[prop])
+          row.style.setProperty(prop,desired[prop]);
+      if (!row.hasAttribute('data-vh-guide')) row.setAttribute('data-vh-guide','true');
+      if (!row.hasAttribute('data-vh-drop-dashed')) row.setAttribute('data-vh-drop-dashed','true');
+    } else {
+      if (row.hasAttribute('data-vh-drop-dashed')) row.removeAttribute('data-vh-drop-dashed');
+      for (const prop of DROP_GUIDE_PROPS)
+        if (row.style.getPropertyValue(prop)) row.style.removeProperty(prop);
+    }
+    const dashedElbow=elbow && row.hasAttribute('data-vh-elbow');
+    if (dashedElbow) {
+      if (!row.hasAttribute('data-vh-drop-dashed-elbow'))
+        row.setAttribute('data-vh-drop-dashed-elbow','true');
+    } else if (row.hasAttribute('data-vh-drop-dashed-elbow'))
+      row.removeAttribute('data-vh-drop-dashed-elbow');
+    return dashed || dashedElbow;
+  }
+  /** Cocos still decides the actual destination. This READ-ONLY dragover
+   * position determines only which EXISTING vHierarchy branch receives dots.
+   * Center hover: dotted path to the node. Edge hover: dotted path to the
+   * native horizontal insertion border, including the final missing segment. */
   function syncNativeDropPaint(box: HTMLElement): void {
     const tree=box.previousElementSibling as HTMLElement|null;
-    const marker=box.querySelector(':scope > .vertical-line') as HTMLElement|null;
     const active=!!(state.options.enabled && state.options.hierarchyLines &&
       tree?.classList.contains('tree') && tree.hasAttribute('hoving') &&
-      !tree.hasAttribute('searching') && marker);
+      !tree.hasAttribute('searching'));
     if (!active) { clearNativeDropPaint(box); return; }
-    const markerRect=marker!.getBoundingClientRect();
-    if (!Number.isFinite(markerRect.left) || markerRect.height<=0) {
+    const hover=nativeDropHover.get(tree!) ||
+      (()=>{const item=views.find(v=>v.row.parentElement===tree && v.row.matches(':hover'));
+        if (!item) return null;
+        const rect=item.row.getBoundingClientRect();
+        return {row:item.row,y:(rect.top+rect.bottom)/2};})();
+    const target=hover && views.find(v=>v.row===hover.row && v.row.parentElement===tree);
+    if (!target?.guide) { clearNativeDropPaint(box); return; }
+    const {group,index,result}=target.guide;
+    const targetNode=result.nodes[index];
+    if (!targetNode?.valid || targetNode.depth<1) {
       clearNativeDropPaint(box); return;
     }
-    // Native marker may lie one indent to the LEFT of the existing vH branch.
-    // Use the existing per-row rail coordinates and preserve other branches.
-    const candidates=new Map<number,{level:number;x:number;length:number;right:boolean;rows:Item[]}>();
-    for (const item of views) {
+    const targetRect=target.row.getBoundingClientRect();
+    const center=(targetRect.top+targetRect.bottom)/2;
+    const positionY=Math.max(targetRect.top,Math.min(targetRect.bottom,hover!.y));
+    const centerHover=Math.abs(positionY-center)<=Math.min(6,targetRect.height*.27);
+    const inserting=!centerHover;
+    const nativeRect=box.getBoundingClientRect();
+    // The Cocos insertion box can be tall for EITHER parent/sibling.
+    // Its nearest BORDER is a visual endpoint, never a drop-intent classifier.
+    const borderY=Math.abs(positionY-nativeRect.top)<=Math.abs(positionY-nativeRect.bottom)
+      ? nativeRect.top : nativeRect.bottom;
+    const before=inserting && positionY<center;
+    const selected=VHierarchyGuides.selectedGuides(result.nodes,[index]);
+    const next=new Set<HTMLElement>();
+    const segmentLevel=targetNode.depth;
+    for (let i=0;i<group.length;i++) {
+      const item=group[i];
       if (item.row.parentElement!==tree || !item.guide) continue;
-      const {result,index}=item.guide;
-      const entry=result.nodes[index];
-      if (!entry?.valid || entry.depth<1) continue;
-      const rect=item.row.getBoundingClientRect();
-      const overlap=Math.min(rect.bottom,markerRect.bottom+2)-Math.max(rect.top,markerRect.top-2);
-      if (overlap<=0) continue;
-      const dragLeft=item.drag.getBoundingClientRect().left;
-      const levels=new Set<number>((item.guidePaint||[]).map(p=>p.level));
-      if (item.row.hasAttribute('data-vh-elbow')) levels.add(entry.depth);
-      for (const level of levels) {
-        const x=dragLeft+entry.offset+result.layout.base+(level-.5)*result.layout.step;
-        const delta=Math.abs(x-markerRect.left);
-        if (!Number.isFinite(x) || delta>result.layout.step+4) continue;
-        let candidate=candidates.get(level);
-        if (!candidate) {
-          candidate={level,x,length:0,right:x>=markerRect.left-2,rows:[]};
-          candidates.set(level,candidate);
+      const path=selected[i];
+      const usePath=!!path && (i<index || (i===index && !before));
+      const levels=new Set<number>(usePath?path.rails:[]);
+      const elbow=usePath && path.elbow;
+      let tail: {level:number;startY:number;endY:number}|null=null;
+      if (inserting && !before && i>=index) {
+        const entry=result.nodes[i];
+        if (i>index && (!entry?.valid || entry.depth<=targetNode.depth)) break;
+        const rect=item.drag.getBoundingClientRect();
+        const from=i===index?center:rect.top;
+        const to=Math.min(borderY,rect.bottom);
+        if (to>from+0.5 && rect.top<borderY) {
+          tail={level:segmentLevel,startY:from,endY:to};
+          levels.add(segmentLevel);
         }
-        candidate.length+=overlap;
-        candidate.rows.push(item);
       }
+      if (drawDottedGuideRow(item,levels,tail,!!elbow)) next.add(item.row);
     }
-    const best=[...candidates.values()].sort((a,b)=>
-      Number(b.right)-Number(a.right) || b.length-a.length ||
-      Math.abs(a.x-markerRect.left)-Math.abs(b.x-markerRect.left))[0];
-    if (!best) { clearNativeDropPaint(box); return; }
-    const marked=new Set<HTMLElement>();
-    for (const item of best.rows) {
-      const row=item.row, layers=item.guidePaint||[];
-      const isRail=layers.some(p=>p.level===best.level);
-      const isElbow=row.hasAttribute('data-vh-elbow') &&
-        item.guide?.result.nodes[item.guide.index].depth===best.level;
-      if (!isRail && !isElbow) continue;
-      marked.add(row);
-      if (isRail) {
-        const images=layers.map(p=>p.level===best.level?DROP_DASH_IMAGE:p.image).join(', ');
-        if (row.style.getPropertyValue('--vh-guide-drop-images')!==images)
-          row.style.setProperty('--vh-guide-drop-images',images);
-        if (!row.hasAttribute('data-vh-drop-dashed'))
-          row.setAttribute('data-vh-drop-dashed','true');
-      } else {
-        row.removeAttribute('data-vh-drop-dashed');
-        row.style.removeProperty('--vh-guide-drop-images');
-      }
-      if (isElbow) {
-        if (!row.hasAttribute('data-vh-drop-dashed-elbow'))
-          row.setAttribute('data-vh-drop-dashed-elbow','true');
-      } else row.removeAttribute('data-vh-drop-dashed-elbow');
-    }
-    for (const row of nativeDropPaintedRows.get(box)||[]) if (!marked.has(row)) {
+    for (const row of nativeDropPaintedRows.get(box)||[]) if (!next.has(row)) {
       row.removeAttribute('data-vh-drop-dashed');
       row.removeAttribute('data-vh-drop-dashed-elbow');
-      row.style.removeProperty('--vh-guide-drop-images');
+      for (const prop of DROP_GUIDE_PROPS) row.style.removeProperty(prop);
+      const item=views.find(view=>view.row===row);
+      if (!item?.guidePaint?.length) row.removeAttribute('data-vh-guide');
     }
-    if (marked.size) {
-      nativeDropPaintedRows.set(box,marked);
+    if (next.size) {
+      nativeDropPaintedRows.set(box,next);
       if (!tree!.hasAttribute('data-vh-dotted-native-replaced'))
         tree!.setAttribute('data-vh-dotted-native-replaced','true');
     } else clearNativeDropPaint(box);
-    // Previously installed Patch 39 may have left its runtime marker property.
-    if (box.hasAttribute('data-vh-thin-insert'))
-      box.removeAttribute('data-vh-thin-insert');
+    if (box.hasAttribute('data-vh-thin-insert')) box.removeAttribute('data-vh-thin-insert');
     if (box.style.getPropertyValue('--vh-insert-rail-x'))
       box.style.removeProperty('--vh-insert-rail-x');
   }
@@ -909,16 +974,32 @@
     const box = tree.nextElementSibling as HTMLElement | null;
     if (!box?.classList.contains('drop-box')) return;
     if (!nativeDropPaintWatchers.has(box)) {
-      // Passive native style watcher only; no pointer, dragover or drop handlers.
       const watcher = new MutationObserver(() => syncNativeDropPaint(box));
       watcher.observe(box, {attributes:true,attributeFilter:['style'],childList:true,subtree:true});
       nativeDropPaintWatchers.set(box, watcher);
+      // Observation only. Cocos still owns native dragover/drop event handling.
+      const passiveDragOver=(event:DragEvent):void=>{
+        const row=(event.target as Element|null)?.closest?.('.tree-node') as HTMLElement|null;
+        if (!row || row.parentElement!==tree) return;
+        nativeDropHover.set(tree,{row,y:event.clientY});
+        if (nativeDropPendingFrames.has(box)) return;
+        nativeDropPendingFrames.add(box);
+        requestAnimationFrame(()=>{
+          nativeDropPendingFrames.delete(box);
+          if (!stopped && box.isConnected) syncNativeDropPaint(box);
+        });
+      };
+      tree.addEventListener('dragover',passiveDragOver,{capture:true,passive:true});
+      nativeDropDragListeners.set(tree,passiveDragOver);
     }
     syncNativeDropPaint(box);
   }
   function pruneNativeDropPaintWatchers(): void {
     for (const [box, watcher] of nativeDropPaintWatchers) if (!box.isConnected) {
       watcher.disconnect(); clearNativeDropPaint(box); nativeDropPaintWatchers.delete(box);
+      const tree=box.previousElementSibling as HTMLElement|null;
+      const handler=tree && nativeDropDragListeners.get(tree);
+      if (handler) { tree!.removeEventListener('dragover',handler,true); nativeDropDragListeners.delete(tree!); }
     }
   }
   function observeTree(tree: HTMLElement): void {
@@ -1479,6 +1560,8 @@
       watcher.disconnect(); clearNativeDropPaint(box);
     }
     nativeDropPaintWatchers.clear();
+    for (const [tree, handler] of nativeDropDragListeners) tree.removeEventListener('dragover',handler,true);
+    nativeDropDragListeners.clear();
     nativeDropPaintedRows.clear();
     for(const release of listeners) release(); listeners.length=0;
     for(const panel of panels())for(const r of roots(panel)){

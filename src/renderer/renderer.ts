@@ -16,7 +16,7 @@
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch45-scene-end-branch-preview';
+  const BUILD_ID = '0.1.1-patch46-native-drop-intent';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -978,49 +978,108 @@
     if(box.hasAttribute('data-vh-thin-insert'))box.removeAttribute('data-vh-thin-insert');
     if(box.style.getPropertyValue('--vh-insert-rail-x'))box.style.removeProperty('--vh-insert-rail-x');
   }
-  /** The very LAST row can be a descendant even when the native 2px insertion
-   * bar is at SCENE level. A hovered last-child is not necessarily the drop
-   * parent! When Cocos' actual bar sits in the scene/root column, paint only
-   * that column through the final row. Do not turn the last child's own elbow
-   * or its deeper branch into dots.
-   * Never change drop-box geometry, mouse handling or insertion intent. */
-  function paintSceneEndDrop(box:HTMLElement,tree:HTMLElement,group:Item[],
-    target:Item,result:VHierarchyGuides.Result,nativeRect:DOMRect):boolean {
-    const index=target.guide?.index ?? -1,entry=result.nodes[index];
-    if(index!==group.length-1 || !entry?.valid || entry.depth<=1 ||
-      nativeRect.height<=0 || nativeRect.height>5) return false;
-    const lastRect=target.row.getBoundingClientRect();
-    if(nativeRect.top<lastRect.bottom-4 || nativeRect.top>lastRect.bottom+22)return false;
-    let root=index;
-    while(result.nodes[root]?.parent!==null && result.nodes[root]?.parent!==undefined)
-      root=result.nodes[root].parent!;
-    const scene=result.nodes[root];
-    if(!scene?.valid || scene.depth!==0)return false;
-    const sceneLevel=scene.depth+1;
-    const treeLeft=tree.getBoundingClientRect().left;
-    const marker=box.querySelector(':scope > .vertical-line') as HTMLElement|null;
-    const markerX=marker?.getBoundingClientRect().left;
-    const entryX=target.drag.getBoundingClientRect().left+entry.offset+result.layout.base;
-    const sceneX=entryX+(sceneLevel-.5)*result.layout.step;
-    const childX=entryX+(entry.depth-.5)*result.layout.step;
-    // Either the native box begins before the scene-tree rows (Cocos 3.8.8)
-    // or its vertical marker lies measurably closer to the scene branch.
-    const sceneColumn=nativeRect.left<=treeLeft+1 ||
-      (markerX!==undefined && Number.isFinite(markerX) &&
-        Math.abs(markerX-sceneX)+8<Math.abs(markerX-childX));
-    if(!sceneColumn)return false;
+  /** Cocos 3.8.8 native index.less:
+   * .drop-box has a 2px horizontal insertion border, or a row-sized outline.
+   * The > .horizontal-line is the native short end cap; > .vertical-line
+   * indicates indentation. Native DOM geometry, never the previous hovered
+   * node, selects a sibling-insertion branch.
+   *
+   * The return value is true for ANY thin native indicator, even when a
+   * measured rail is unavailable, so stale dotted elbows/outline are cleared
+   * rather than repainting the previous parent hover. */
+  function paintNativeInsertDrop(box:HTMLElement,tree:HTMLElement,group:Item[],
+    result:VHierarchyGuides.Result,nativeRect:DOMRect):boolean {
+    if(!(nativeRect.height>0 && nativeRect.height<=5))return false;
     clearNodeOutline(box);
-    const endY=nativeRect.top;
     const next=new Set<HTMLElement>();
-    for(let i=root;i<=index;i++){
-      const row=group[i],node=result.nodes[i];
-      if(!row?.guide || !node?.valid || row.row.parentElement!==tree)continue;
-      const rect=row.drag.getBoundingClientRect();
-      if(rect.top>=endY)break;
-      const from=i===root?(rect.top+rect.bottom)/2:rect.top;
-      const to=Math.min(endY,rect.bottom);
-      if(to>from+.5 && drawDottedGuideRow(row,[{level:sceneLevel,startY:from,endY:to}],false))
-        next.add(row.row);
+    const nativeBarY=nativeRect.top;
+    const marker=box.querySelector(':scope > .vertical-line') as HTMLElement|null;
+    const markerRect=marker?.getBoundingClientRect();
+    const railX=markerRect && Number.isFinite(markerRect.left) && markerRect.height>0
+      ? markerRect.left
+      : nativeRect.left+(tree.hasAttribute('data-vh-quick-toggle')?20:0)-1;
+    const ordered=group.map((item,index)=>({item,index,rect:item.row.getBoundingClientRect()}))
+      .filter(({item,rect})=>item.row.parentElement===tree && item.guide &&
+        Number.isFinite(rect.top) && rect.height>0);
+    // The bar is the insertion boundary. Its physical position also works for
+    // gaps below the final child, where dragover may still report that child.
+    const before=ordered.filter(({rect})=>rect.top<nativeBarY+1)
+      .sort((a,b)=>b.rect.top-a.rect.top)[0];
+    const after=ordered.filter(({rect})=>rect.top>=nativeBarY-1)
+      .sort((a,b)=>a.rect.top-b.rect.top)[0];
+    const reference=before || after;
+    if(!reference){applyNativeDropPaths(box,tree,next);return true;}
+    const {layout,nodes}=result;
+    const baseItem=reference.item;
+    const baseNode=nodes[reference.index];
+    if(!baseNode?.valid){applyNativeDropPaths(box,tree,next);return true;}
+    const dragLeft=baseItem.drag.getBoundingClientRect().left;
+    const maxDepth=Math.min(32,Math.max(1,...nodes.filter(n=>n.valid).map(n=>n.depth)));
+    let insertionDepth=0,matchDistance=Infinity;
+    for(let level=1;level<=maxDepth;level++){
+      const x=dragLeft+baseNode.offset+layout.base+(level-.5)*layout.step;
+      const distance=Math.abs(x-railX);
+      if(distance<matchDistance){matchDistance=distance;insertionDepth=level;}
+    }
+    // Native marker can be shifted by a few pixels by Creator's icon gutter.
+    // When the match is impossible, leave its own horizontal line untouched.
+    if(!insertionDepth || !Number.isFinite(railX) ||
+      matchDistance>Math.max(10,layout.step*.8)){
+      applyNativeDropPaths(box,tree,next);return true;
+    }
+    const findParent=(index:number):number|null=>{
+      let at:number|null=index,guard=0;
+      while(at!==null && guard++<40){
+        const entry=nodes[at];
+        if(!entry?.valid)return null;
+        if(entry.depth===insertionDepth-1)return at;
+        if(entry.depth<insertionDepth-1)return null;
+        at=entry.parent;
+      }
+      return null;
+    };
+    let parentIndex=findParent(reference.index);
+    if(parentIndex===null && after)parentIndex=findParent(after.index);
+    if(parentIndex===null){applyNativeDropPaths(box,tree,next);return true;}
+    const chain:number[]=[];
+    let at:number|null=parentIndex;
+    while(at!==null && chain.length<33){
+      if(!nodes[at]?.valid)break;
+      chain.unshift(at);
+      at=nodes[at].parent;
+    }
+    const paths=new Map<number,DropSegment[]>();
+    const add=(i:number,level:number,startY:number,endY:number):void=>{
+      if(i<0||i>=group.length||endY<=startY)return;
+      const item=group[i];
+      if(item.row.parentElement!==tree)return;
+      const segments=paths.get(i)||[];
+      segments.push({level,startY,endY});
+      paths.set(i,segments);
+    };
+    // Ancestor path to the *actual insertion parent* (not the last hovered
+    // child). All custom horizontal elbows stay solid for insertion mode:
+    // Cocos already owns and draws the horizontal insertion bar.
+    for(let c=1;c<chain.length;c++){
+      const previous=chain[c-1],current=chain[c],level=nodes[current].depth;
+      for(let i=previous;i<=current;i++){
+        const rect=group[i].drag.getBoundingClientRect();
+        const mid=(rect.top+rect.bottom)/2;
+        add(i,level,i===previous?mid:rect.top,i===current?mid:rect.bottom);
+      }
+    }
+    const parentRect=group[parentIndex].drag.getBoundingClientRect();
+    for(let i=parentIndex;i<group.length;i++){
+      const item=group[i];
+      if(item.row.parentElement!==tree || !item.guide)continue;
+      const rect=item.drag.getBoundingClientRect();
+      if(rect.top>=nativeBarY)break;
+      const from=i===parentIndex?(parentRect.top+parentRect.bottom)/2:rect.top;
+      add(i,insertionDepth,from,Math.min(nativeBarY,rect.bottom));
+    }
+    for(const [index,segments] of paths){
+      const item=group[index];
+      if(drawDottedGuideRow(item,segments,false))next.add(item.row);
     }
     applyNativeDropPaths(box,tree,next);
     return true;
@@ -1033,11 +1092,29 @@
       tree?.classList.contains('tree') && tree.hasAttribute('hoving') &&
       !tree.hasAttribute('searching'));
     if(!active){clearNativeDropPaint(box);return;}
-    const hover=nativeDropHover.get(tree!) ||
-      (()=>{const item=views.find(v=>v.row.parentElement===tree && v.row.matches(':hover'));
-        if(!item)return null;
-        const rect=item.row.getBoundingClientRect();
-        return {row:item.row,y:(rect.top+rect.bottom)/2};})();
+    const nativeRect=box.getBoundingClientRect();
+    // Cocos native .drop-box (height 2px) is authoritative for sibling
+    // insertions. Use its horizontal border and vertical marker to select the
+    // dotted path, even when dragover is still aimed at the previous node.
+    const first=views.find(v=>v.row.parentElement===tree && v.guide);
+    if(first?.guide && paintNativeInsertDrop(box,tree!,first.guide.group,
+      first.guide.result,nativeRect))return;
+    // A native full-row outline identifies the parent target. Prefer the row
+    // matching the ACTUAL outline over a stale dragover target.
+    const nativeNode=views.find(v=>{
+      if(v.row.parentElement!==tree || !v.guide)return false;
+      const r=v.row.getBoundingClientRect();
+      return Math.abs(r.top-nativeRect.top)<=3 &&
+        Math.abs(r.bottom-nativeRect.bottom)<=3 && nativeRect.height>5;
+    });
+    const hover=nativeNode
+      ? {row:nativeNode.row,y:(nativeNode.row.getBoundingClientRect().top+
+          nativeNode.row.getBoundingClientRect().bottom)/2}
+      : nativeDropHover.get(tree!) ||
+        (()=>{const item=views.find(v=>v.row.parentElement===tree && v.row.matches(':hover'));
+          if(!item)return null;
+          const r=item.row.getBoundingClientRect();
+          return {row:item.row,y:(r.top+r.bottom)/2};})();
     const target=hover && views.find(v=>v.row===hover.row && v.row.parentElement===tree);
     if(!target?.guide){clearNativeDropPaint(box);return;}
     const {group,index,result}=target.guide;
@@ -1046,12 +1123,9 @@
     const targetRect=target.row.getBoundingClientRect();
     const center=(targetRect.top+targetRect.bottom)/2;
     const positionY=Math.max(targetRect.top,Math.min(targetRect.bottom,hover!.y));
-    const centerHover=Math.abs(positionY-center)<=Math.min(6,targetRect.height*.27);
+    const centerHover=nativeNode===target ||
+      Math.abs(positionY-center)<=Math.min(6,targetRect.height*.27);
     const inserting=!centerHover;
-    const nativeRect=box.getBoundingClientRect();
-    // At the end of the scene, the native insertion indicator takes priority
-    // over the last CHILD row that happens to receive the hover event.
-    if(paintSceneEndDrop(box,tree!,group,target,result,nativeRect))return;
     if(centerHover)syncNodeOutline(box,target,nativeRect,targetRect);
     else clearNodeOutline(box);
     const before=inserting && positionY<center;
@@ -1120,8 +1194,9 @@
       // Observation only. Cocos still owns native dragover/drop event handling.
       const passiveDragOver=(event:DragEvent):void=>{
         const row=(event.target as Element|null)?.closest?.('.tree-node') as HTMLElement|null;
-        if (!row || row.parentElement!==tree) return;
-        nativeDropHover.set(tree,{row,y:event.clientY});
+        if (row?.parentElement===tree)nativeDropHover.set(tree,{row,y:event.clientY});
+        else nativeDropHover.delete(tree); // native gap: never reuse old parent hover
+        // Even an empty inter-row gap must update after Cocos paints .drop-box.
         if (nativeDropPendingFrames.has(box)) return;
         nativeDropPendingFrames.add(box);
         requestAnimationFrame(()=>{

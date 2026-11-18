@@ -229,7 +229,7 @@ test('guide shortcuts never cancel mousedown or pointerdown required for native 
 });
 
 test('new plugin build replaces stale renderer and CSS',()=>{
-  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch45-scene-end-branch-preview'/);
+  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch46-native-drop-intent'/);
   assert.match(renderer,/if \(w\.__vHierarchy388\.buildId === BUILD_ID\)/);
   assert.match(renderer,/w\.__vHierarchy388\.stop\(\)/);
   assert.match(renderer,/delete w\.__vHierarchy388/);
@@ -305,7 +305,8 @@ test('four-level hover paints every parent-child vertical half and the target el
   // Inserting before same node stops at its TOP border; do not paint an
   // unrelated dotted route through the destination node itself.
   nativeDropHover.set(tree,{row:items[3].row,y:141});
-  box.getBoundingClientRect=()=>({top:140,bottom:160,left:0,right:450,height:20,width:450});
+  box.getBoundingClientRect=()=>({top:140,bottom:142,left:100,right:450,height:2,width:350});
+  box.querySelector=()=>({getBoundingClientRect:()=>({left:119,height:10})});
   env.sync(box);
   assert.equal(items[2].row.a.get('data-vh-drop-dashed'),'true');
   assert.equal(items[3].row.a.has('data-vh-drop-dashed'),false);
@@ -460,12 +461,13 @@ test('native scene-end insertion does not dash the last child branch or its elbo
   assert.equal(rows[2].s.get('--vh-guide-drop-sizes').includes('19px'),true,
     'scene dots end at native horizontal insertion bar, not below it');
 
-  // A thin insertion at the last CHILD's own column must still work. Do not
-  // globally disable child previews merely because this is the final row.
+  // A thin insertion at the last CHILD's own column still renders the dotted
+  // vertical branch, but never retains the prior horizontal elbow: the
+  // native .drop-box already paints the horizontal insertion border.
   boxRect={top:159,bottom:161,left:74,right:465,height:2,width:391};
   markerX=95;
   env.sync(box);
-  assert.equal(rows[2].a.get('data-vh-drop-dashed-elbow'),'true');
+  assert.equal(rows[2].a.has('data-vh-drop-dashed-elbow'),false);
   assert.match(rows[2].s.get('--vh-guide-drop-positions'),/^42px /);
   assert.equal(box.a.has('data-vh-node-outline'),false);
 
@@ -478,19 +480,35 @@ test('native scene-end insertion does not dash the last child branch or its elbo
   assert.equal(rows[2].a.has('data-vh-drop-dashed-elbow'),false);
   assert.equal(box.a.has('data-vh-node-outline'),false);
 
+  // Parent outline -> sibling gap: the native 2px bar wins even with the
+  // exact same cached hover row. No dotted horizontal segment survives.
+  boxRect={top:140,bottom:160,left:74,right:465,height:20,width:391};
+  nativeDropHover.set(tree,{row:rows[2],y:150});
+  env.sync(box);
+  assert.equal(box.a.get('data-vh-node-outline'),'true');
+  assert.equal(rows[2].a.get('data-vh-drop-dashed-elbow'),'true');
+  boxRect={top:159,bottom:161,left:74,right:465,height:2,width:391};
+  env.sync(box);
+  assert.equal(box.a.has('data-vh-node-outline'),false);
+  for(const row of rows)assert.equal(row.a.has('data-vh-drop-dashed-elbow'),false,
+    'all stale dotted horizontal elbows are removed on native gap preview');
+
   tree.removeAttribute('hoving');
   env.sync(box);
   for(const row of rows)assert.equal(row.a.has('data-vh-drop-dashed'),false);
   assert.equal(tree.a.has('data-vh-dotted-native-replaced'),false);
 });
 
-test('only the final native root-column insertion overrides nested drag path',()=>{
-  assert.match(renderer,/function paintSceneEndDrop\(box,/);
-  assert.match(renderer,/index !== group\.length - 1/);
-  assert.match(renderer,/nativeRect\.height > 5/);
-  assert.match(renderer,/scene\.depth !== 0/);
-  assert.match(renderer,/nativeRect\.left <= treeLeft \+ 1/);
-  assert.match(renderer,/paintSceneEndDrop\(box, tree, group, target, result, nativeRect\)/);
+test('native drop-box marker geometry, not stale row hover, controls sibling dotted branch',()=>{
+  assert.match(renderer,/function paintNativeInsertDrop\(box/);
+  assert.match(renderer,/nativeRect\.height > 0 && nativeRect\.height <= 5/);
+  assert.match(renderer,/const marker = box\.querySelector\(':scope > \.vertical-line'\)/);
+  assert.match(renderer,/const nativeBarY = nativeRect\.top/);
+  assert.match(renderer,/Math\.abs\(x - railX\)/);
+  assert.match(renderer,/paintNativeInsertDrop\(box, tree, first\.guide\.group/);
+  assert.match(renderer,/drawDottedGuideRow\(item, segments, false\)/);
+  assert.match(renderer,/nativeDropHover\.delete\(tree\)/);
   assert.match(renderer,/applyNativeDropPaths\(box, tree, next\)/);
+  assert.doesNotMatch(renderer,/paintSceneEndDrop/);
   assert.doesNotMatch(renderer,/addEventListener\('drop'/);
 });

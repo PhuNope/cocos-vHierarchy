@@ -87,3 +87,58 @@ test('guide target uses 8px tolerance but does not capture unrelated row area',(
   assert.equal(guides.hitTest(child,layout,x,19,20,'tree'),null);
   assert.equal(guides.hitTest(child,layout,200,10,20,'tree'),null);
 });
+
+test('selected row highlights only its path back to the real visible parent',()=>{
+  // Scene, A, A1, A2, B, C: select A2. Vertical highlighted through A1,
+  // selected elbows on A and A2. B/C and A1 horizontal elbows stay neutral.
+  const nodes=guides.calculate([row(0),row(1),row(2),row(2),row(1),row(1)]).nodes;
+  const h=guides.selectedGuides(nodes,[3]);
+  assert.equal(h[0].elbow,false);
+  assert.equal(h[1].elbow,true);
+  assert.equal(h[2].elbow,false);
+  assert.equal(h[2].throughElbow,true);
+  assert.ok(h[2].rails.includes(2));
+  assert.equal(h[3].elbow,true);
+  assert.equal(h[3].throughElbow,false);
+  assert.equal(h[4].elbow,false);
+  assert.equal(h[5].rails.length,0);
+});
+test('selected branches include all earlier siblings but not unrelated later siblings',()=>{
+  const nodes=guides.calculate([row(0),row(1),row(1),row(1),row(0),row(1)]).nodes;
+  const h=guides.selectedGuides(nodes,[3]);
+  assert.equal(h[1].throughElbow,true);
+  assert.equal(h[2].throughElbow,true);
+  assert.equal(h[3].elbow,true);
+  assert.equal(h[4].rails.length,0);
+  assert.equal(h[5].elbow,false);
+});
+test('multi-selection unions guide segments and invalid/filtered gaps cannot create phantom highlight',()=>{
+  const nodes=guides.calculate([row(0),row(1),row(2),row(2),row(1),row(0)]).nodes;
+  const h=guides.selectedGuides(nodes,[2,4,4,-1,100]);
+  assert.equal(h[1].elbow,true);
+  assert.equal(h[2].elbow,true);
+  assert.equal(h[4].elbow,true);
+  assert.equal(h[5].elbow,false);
+  const filtered=guides.calculate([row(0),row(1,80,{searching:true}),row(2)]).nodes;
+  assert.deepEqual(Array.from(guides.selectedGuides(filtered,[2])[2].rails),[]);
+  assert.equal(guides.selectedGuides(filtered,[2])[2].elbow,false);
+});
+test('native dashed drop rail snaps to measured elbow, not guessed 20px offset',()=>{
+  // Screenshot: native dashed x34; matching hierarchy guide x54, step20.
+  assert.equal(guides.dropGuideCorrection(34,54,20),20);
+  assert.equal(guides.dropGuideCorrection(54,54,20),0);
+  assert.equal(guides.dropGuideCorrection(34,56.3,20),22.5);
+  assert.equal(guides.dropGuideCorrection(34,85,20),0); // unrelated depth
+  assert.equal(guides.dropGuideCorrection(NaN,54,20),0);
+  assert.equal(guides.dropGuideCorrection(34,54,0),0);
+});
+test('large hierarchy selection uses bounded per-depth traversal',()=>{
+  const rows=[row(0),...Array.from({length:2500},()=>row(1))];
+  const nodes=guides.calculate(rows).nodes;
+  const t=performance.now();
+  const highlighted=guides.selectedGuides(nodes,[2500]);
+  assert.equal(highlighted[2500].elbow,true);
+  assert.equal(highlighted[2499].throughElbow,true);
+  assert.equal(highlighted[0].elbow,false);
+  assert.ok(performance.now()-t<2000,'2500 rows should not be quadratic');
+});

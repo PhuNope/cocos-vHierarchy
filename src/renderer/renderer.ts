@@ -25,6 +25,7 @@
   const GUIDE_PROPS = ['--vh-guide-images', '--vh-guide-positions', '--vh-guide-sizes', '--vh-guide-width',
     '--vh-guide-left', '--vh-guide-elbow-left', '--vh-guide-elbow-width'];
   const GUIDE_COLOR = 'rgba(151,166,187,.42)';
+  const GUIDE_SELECTED_COLOR = 'var(--color-focus-border, #47bdf1)';
   const OPTIONS: Array<[Flag, string]> = [
     ['navigationBar', 'Navigation bar / Bookmarks'],
     ['activationToggle', 'Active quick toggle'], ['hierarchyLines', 'Hierarchy lines'],
@@ -92,6 +93,18 @@
       border-bottom:1px solid rgba(151,166,187,.42);
       border-bottom-left-radius:4px; opacity:.82; pointer-events:none; user-select:none; z-index:0;
     }
+    /* The node's actual selected ancestry/path is emphasized, not every
+       ancestor rail or the full gutter. Never changes prefab name color. */
+    .tree-node[data-vh-guide-selected-elbow] > ui-drag-item.drag-item::after {
+      border-left-color:var(--color-focus-border,#47bdf1) !important;
+      border-bottom-color:var(--color-focus-border,#47bdf1) !important;
+      opacity:1 !important;
+    }
+    .tree-node[data-vh-guide-through-elbow]:not([data-vh-guide-selected-elbow]) > ui-drag-item.drag-item::after {
+      border-left-color:var(--color-focus-border,#47bdf1) !important;
+      opacity:1 !important;
+    }
+    .tree-node[data-vh-guide-selected] > ui-drag-item.drag-item::before {opacity:1 !important;}
     .tree-node:hover > ui-drag-item.drag-item::before,
     .tree-node:hover > ui-drag-item.drag-item::after,
     .tree-node[is-selected='true'] > ui-drag-item.drag-item::before,
@@ -139,8 +152,11 @@
        coordinates, or Creator's drag/drop event handlers. Search mode already
        forces the native marker to left:0 and width:100%, so exclude it. */
     .content > .tree[data-vh-lock-gutter][hoving]:not([searching]) + .drop-box {
-      transform:translateX(var(--vh-action-gutter-width));
-      max-width:calc(100% - var(--vh-action-gutter-width));
+      /* Native x is derived from the drop target, not from painted guide rails.
+         The measured second offset aligns the dashed rail with the actual
+         parent/child guide even with different indent steps or zoom levels. */
+      transform:translateX(var(--vh-drop-guide-shift,var(--vh-action-gutter-width)));
+      max-width:calc(100% - var(--vh-drop-guide-shift,var(--vh-action-gutter-width)));
     }
     /* The marker must render ABOVE our tinted and selected row backgrounds.
        Creator's default z-index:0 sits underneath the table's z-index:1. */
@@ -466,7 +482,7 @@
     const element = create(); item.drag.appendChild(element); return element;
   }
   function clearGuides(row: HTMLElement): void {
-    changeAttr(row, 'data-vh-guide');changeAttr(row, 'data-vh-elbow');
+    for (const name of ['data-vh-guide','data-vh-elbow','data-vh-guide-selected','data-vh-guide-selected-elbow','data-vh-guide-through-elbow']) changeAttr(row,name);
     for (const key of GUIDE_PROPS) row.style.removeProperty(key);
   }
   function guideProp(row: HTMLElement, key: string, value: string): void {
@@ -481,6 +497,8 @@
       padding:item.padding, margin:item.margin, anchor:item.anchor, searching:item.searching,
       reportedDepth: Number.isInteger(item.node?.depth) ? item.node!.depth : null,
     })));
+    const selected = VHierarchyGuides.selectedGuides(result.nodes,
+      items.flatMap((item,index)=>item.row.getAttribute('is-selected') === 'true' ? [index] : []));
     for (let i = 0; i < items.length; i++) {
       const {row} = items[i]; const entry = result.nodes[i];
       items[i].guide = entry.valid ? { group:items, index:i, result } : undefined;
@@ -501,6 +519,18 @@
           size:`1px ${rail.shape === 'full' ? '100%' : '50%'}`,
         });
       }
+      // Selected vertical segments go IN FRONT of the neutral sibling rails.
+      // A selected elbow is highlighted by its existing ::after border; the
+      // vertical path through earlier sibling rows is drawn by ::before.
+      for (const level of selected[i].rails) {
+        const x = base + (level - 0.5) * step;
+        if (!(x > 1 && x < entry.indent - 1)) continue;
+        paint.unshift({image:`linear-gradient(${GUIDE_SELECTED_COLOR},${GUIDE_SELECTED_COLOR})`,
+          position:`${x}px top`, size:'1.5px 100%'});
+      }
+      changeAttr(row,'data-vh-guide-selected', selected[i].rails.length || selected[i].elbow ? 'true' : undefined);
+      changeAttr(row,'data-vh-guide-selected-elbow',selected[i].elbow ? 'true' : undefined);
+      changeAttr(row,'data-vh-guide-through-elbow',selected[i].throughElbow ? 'true' : undefined);
       guideProp(row,'--vh-guide-left',`${entry.offset}px`);
       guideProp(row,'--vh-guide-width',`${entry.indent}px`);
       guideProp(row,'--vh-guide-images',paint.length ? paint.map(p=>p.image).join(', ') : 'none');
@@ -719,6 +749,99 @@
     if (state.options.sceneSelector && !scene) bar.insertBefore(btn('▤', 'Scene selector', () => { void showScenes(); }), bar.lastElementChild);
     if (!state.options.sceneSelector) scene?.remove();
   }
+  /** The dashed native .drop-box vertical-line is NOT part of our guide
+   * pseudo-elements. After Cocos computes each dragover position, align its
+   * vertical rail to the elbow on the row immediately below the insertion line.
+   * Measure real DOM positions; use no hardcoded 20px/22px correction. */
+  const treeGuideRows = new WeakMap<HTMLElement, Item[]>();
+  const dropListeners = new Map<HTMLElement, () => void>();
+  const dropFrames = new Map<HTMLElement, number>();
+  function alignDropGuide(tree: HTMLElement): void {
+    const hint = tree.nextElementSibling as HTMLElement | null;
+    if (!hint?.classList.contains('drop-box')) return;
+    const reset = (): void => {
+      if (hint.style.getPropertyValue('--vh-drop-guide-shift'))
+        hint.style.removeProperty('--vh-drop-guide-shift');
+    };
+    if (!state.options.enabled || !state.options.hierarchyLines ||
+        !tree.hasAttribute('hoving') || tree.hasAttribute('searching') ||
+        !tree.hasAttribute('data-vh-lock-gutter')) { reset(); return; }
+    const content = tree.parentElement;
+    if (!content) { reset(); return; }
+    const top = hint.getBoundingClientRect().top;
+    const targets = treeGuideRows.get(tree);
+    if (!targets?.length) { reset(); return; }
+    // Binary search in the native flat, ordered list rather than measuring
+    // thousands of rows on every dragover. Cocos' rows are monotonic in Y.
+    // Prefer the next row when a reorder line falls exactly between siblings.
+    let low=0, high=targets.length;
+    while (low<high) {
+      const mid=(low+high)>>1;
+      if (targets[mid].drag.getBoundingClientRect().top < top - 3) low=mid+1;
+      else high=mid;
+    }
+    let best: Item | null = null, bestDistance = Infinity;
+    for (let i=Math.max(0,low-2); i<Math.min(targets.length,low+2); i++) {
+      const item=targets[i];
+      if (!item.guide || item.searching) continue;
+      const rect=item.drag.getBoundingClientRect();
+      const dist=rect.top>=top-3 ? Math.abs(rect.top-top) :
+        (top<=rect.bottom ? Math.min(10,Math.abs(rect.top-top)) : Math.abs(rect.bottom-top)+10);
+      if (dist<bestDistance) {best=item;bestDistance=dist;}
+    }
+    if (!best?.guide) { reset(); return; }
+    const {result,index} = best.guide;
+    const node = result.nodes[index];
+    const step = result.layout.step;
+    if (!node.valid || bestDistance > Math.max(25,step*2)) { reset(); return; }
+    const left = parseFloat(getComputedStyle(hint).left);
+    const gutter = parseFloat(getComputedStyle(tree).getPropertyValue('--vh-action-gutter-width'));
+    if (!Number.isFinite(left) || !Number.isFinite(gutter)) { reset(); return; }
+    // Native dashed line is left:-1px inside the marker. Native border
+    // coordinates are computed without our CSS translation.
+    const nativeX = content.getBoundingClientRect().left + left + gutter - 1;
+    const rect = best.drag.getBoundingClientRect();
+    // When the marker sits *inside* a parent row, Creator is advertising
+    // "make child" rather than "insert before/after this sibling". In that
+    // case align to the would-be child elbow (one level deeper).
+    const childDrop = top > rect.top + 4 && top < rect.bottom - 4;
+    const elbowX = childDrop ? result.layout.base + (node.depth + .5)*step : node.elbowX;
+    const guideX = rect.left + node.offset + elbowX;
+    const delta = VHierarchyGuides.dropGuideCorrection(nativeX, guideX, step);
+    const value = `${gutter + delta}px`;
+    if (hint.style.getPropertyValue('--vh-drop-guide-shift') !== value)
+      hint.style.setProperty('--vh-drop-guide-shift',value);
+  }
+  function syncDropGuide(tree: HTMLElement): void {
+    if (dropFrames.has(tree)) return;
+    const frame = requestAnimationFrame(() => {
+      dropFrames.delete(tree);
+      if (!stopped && tree.isConnected) alignDropGuide(tree);
+    });
+    dropFrames.set(tree,frame);
+  }
+  function observeDropGuide(tree: HTMLElement): void {
+    if (dropListeners.has(tree)) return;
+    // Passive capture: never prevent, retarget, or intercept Cocos drag events.
+    const onDrag = (): void => syncDropGuide(tree);
+    tree.addEventListener('dragover',onDrag,true);
+    tree.addEventListener('dragleave',onDrag,true);
+    tree.addEventListener('drop',onDrag,true);
+    dropListeners.set(tree,() => {
+      tree.removeEventListener('dragover',onDrag,true);
+      tree.removeEventListener('dragleave',onDrag,true);
+      tree.removeEventListener('drop',onDrag,true);
+      const hint = tree.nextElementSibling as HTMLElement | null;
+      if (hint?.classList.contains('drop-box')) hint.style.removeProperty('--vh-drop-guide-shift');
+    });
+  }
+  function pruneDropGuides(): void {
+    for (const [tree,release] of dropListeners) if (!tree.isConnected) {
+      release();dropListeners.delete(tree);
+      const id=dropFrames.get(tree);if (id!==undefined)cancelAnimationFrame(id);
+      dropFrames.delete(tree);
+    }
+  }
   /** Watch native Vue tree changes so guides render in the expand frame, not at
    * the 1.4s resilience polling interval. Ignore changes from our own controls. */
   function observeTree(tree: HTMLElement): void {
@@ -737,7 +860,7 @@
     });
     watcher.observe(tree, { childList:true, subtree:true, attributes:true,
       attributeFilter:['is-expand','is-parent','is-active','is-selected','is-animating','state','searching',
-        'is-prefab-node','is-prefab-root','is-prefab-nested'] });
+        'is-prefab-node','is-prefab-root','is-prefab-nested','hoving'] });
     treeObservers.set(tree, watcher);
   }
   function pruneTreeObservers(): void {
@@ -775,6 +898,7 @@
           if (scannedTrees.has(tree)) continue; scannedTrees.add(tree);
           listRoot = tree;
           observeTree(tree);
+          observeDropGuide(tree);
           changeAttr(tree, 'data-vh-lock-gutter', state.options.enabled ? 'true' : undefined);
           changeAttr(tree, 'data-vh-quick-toggle', state.options.enabled && state.options.activationToggle ? 'true' : undefined);
           rootHost = tree.getRootNode() as Document | ShadowRoot;
@@ -833,11 +957,13 @@
           }
           previousTreePaths.set(tree,nextPaths);
           updateGuides(group);
+          treeGuideRows.set(tree,group);
+          if (tree.hasAttribute('hoving')) syncDropGuide(tree);
           listen(rootHost);
         }
       }
     } catch (e) { logError('scan',e); }
-    finally { pruneTreeObservers(); }
+    finally { pruneTreeObservers(); pruneDropGuides(); }
   }
   function schedule(): void { if (!stopped && !queued) { queued=true; requestAnimationFrame(scan); } }
   function listen(root: Document | ShadowRoot): void {
@@ -1275,6 +1401,10 @@
     stopped=true; appearanceWrites.clear(); prefabPromotions.clear(); googleFontLink?.remove();googleFontLink=null; layerLookup.dispose(); if(timer)clearInterval(timer);observer?.disconnect();closePopup();
     for (const watcher of treeObservers.values()) watcher.disconnect();
     treeObservers.clear();
+    for (const release of dropListeners.values()) release();
+    dropListeners.clear();
+    for (const frame of dropFrames.values()) cancelAnimationFrame(frame);
+    dropFrames.clear();
     for(const release of listeners) release(); listeners.length=0;
     for(const panel of panels())for(const r of roots(panel)){
       for(const tree of (r as Element).querySelectorAll?.('.tree[data-vh-lock-gutter],.tree[data-vh-quick-toggle]')||[]) {

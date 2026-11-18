@@ -127,6 +127,56 @@ namespace VHierarchyGuides {
     }
     return null;
   }
+  /** Highlight only the connection that leads from each visible parent to a
+   * selected node. Intermediate siblings carry the selected trunk, while the
+   * child's elbow is highlighted. Multiple selections are unioned; a missing
+   * parent/filtered view never invents a connection. O(rows * maxDepth).
+   */
+  export interface SelectionGuide { rails: number[]; elbow: boolean; throughElbow: boolean; }
+  export function selectedGuides(nodes: Node[], selections: readonly number[], maxDepth = 32): SelectionGuide[] {
+    const depthLimit = Math.max(0, Math.min(32, Math.floor(maxDepth)));
+    const delta = Array.from({length: depthLimit + 1}, () => new Int32Array(nodes.length + 1));
+    const elbows = new Uint8Array(nodes.length);
+    for (const index of new Set(selections)) {
+      if (!Number.isInteger(index) || index < 0 || index >= nodes.length || !nodes[index].valid) continue;
+      let current: number | null = index;
+      while (current !== null) {
+        const node: Node = nodes[current];
+        if (!node.valid || node.depth < 0 || node.depth > depthLimit) break;
+        if (node.depth > 0) {
+          elbows[current] = 1;
+          const parent = node.parent;
+          if (parent === null || !nodes[parent]?.valid || nodes[parent].depth !== node.depth - 1) break;
+          // Connect parent to child through all preceding visible sibling rows.
+          if (parent + 1 < current) {
+            delta[node.depth][parent + 1]++;
+            delta[node.depth][current]--;
+          }
+        }
+        current = node.parent;
+      }
+    }
+    const active = new Int32Array(depthLimit + 1);
+    return nodes.map((node, index) => {
+      for (let level = 1; level <= depthLimit; level++) active[level] += delta[level][index];
+      const rails: number[] = [];
+      if (node.valid) for (let level = 1; level <= Math.min(depthLimit, node.depth); level++) {
+        if (active[level] > 0) rails.push(level);
+      }
+      return { rails, elbow: elbows[index] !== 0, throughElbow: rails.includes(node.depth) };
+    });
+  }
+
+  /** Bounded screen-space adjustment for Creator's native dashed drop rail.
+   * The native drop marker and vHierarchy rails can differ by one indent step
+   * after Creator computes the drag target. Never move a marker by more than
+   * one measured indentation step (plus border/pixel rounding tolerance). */
+  export function dropGuideCorrection(nativeRailX: number, guideRailX: number, step: number): number {
+    if (![nativeRailX, guideRailX, step].every(Number.isFinite) || step < 8 || step > 40) return 0;
+    const delta = guideRailX - nativeRailX;
+    return Math.abs(delta) <= step + 4 ? Math.round(delta * 2) / 2 : 0;
+  }
+
   /** Returns a visible ancestor, never a guessed parent in a filtered/virtualized tree. */
   export function foldParentIndex(nodes: Node[], childIndex: number, lineLevel: number): number | null {
     if (!Number.isInteger(lineLevel) || lineLevel < 1 ||

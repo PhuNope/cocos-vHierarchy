@@ -127,12 +127,38 @@ test('legacy toolbar injected inside .content is migrated before drag drop',()=>
 
 test('drop marker correction affects only its visual overlay while native reorder remains untouched',()=>{
   assert.match(renderer,/\.content > \.tree\[data-vh-lock-gutter\]\[hoving\]:not\(\[searching\]\) \+ \.drop-box/);
-  assert.match(renderer,/transform:translateX\(var\(--vh-action-gutter-width\)\)/);
-  assert.match(renderer,/max-width:calc\(100% - var\(--vh-action-gutter-width\)\)/);
+  assert.match(renderer,/transform:translateX\(var\(--vh-drop-guide-shift,var\(--vh-action-gutter-width\)\)\)/);
+  assert.match(renderer,/max-width:calc\(100% - var\(--vh-drop-guide-shift,var\(--vh-action-gutter-width\)\)\)/);
   assert.match(renderer,/\.content > \.tree\[hoving\] \+ \.drop-box\s*\{\s*z-index:2 !important; pointer-events:none !important/);
   assert.match(renderer,/--vh-action-gutter-width:22px/);
   assert.match(renderer,/--vh-action-gutter-width:42px/);
   assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*pointer-events:auto/);
-  assert.doesNotMatch(renderer,/addEventListener\('dragover'/);
-  assert.doesNotMatch(renderer,/addEventListener\('drop'/);
+  assert.match(renderer,/tree.addEventListener\('dragover',\s*onDrag,\s*true\)/);
+  assert.match(renderer,/VHierarchyGuides.dropGuideCorrection\(nativeX, guideX, step\)/);
+  assert.match(renderer,/tree.addEventListener\('drop',\s*onDrag,\s*true\)/);
+});
+
+test('selected guide path uses native is-selected, keeps parent elbow distinct, and cleans up',()=>{
+  assert.match(renderer,/VHierarchyGuides\.selectedGuides\(result\.nodes/);
+  assert.match(renderer,/item\.row\.getAttribute\('is-selected'\) === 'true'/);
+  assert.match(renderer,/data-vh-guide-selected-elbow/);
+  assert.match(renderer,/data-vh-guide-through-elbow/);
+  assert.match(renderer,/border-left-color:var\(--color-focus-border,#47bdf1\) !important/);
+  assert.match(renderer,/border-bottom-color:var\(--color-focus-border,#47bdf1\) !important/);
+  assert.match(renderer,/for \(const name of \['data-vh-guide',\s*'data-vh-elbow',\s*'data-vh-guide-selected'/);
+});
+test('drop-rail correction is visually isolated and cleaned up on release',()=>{
+  assert.match(renderer,/hint\.style\.setProperty\('--vh-drop-guide-shift',\s*value\)/);
+  assert.match(renderer,/hint\.style\.removeProperty\('--vh-drop-guide-shift'\)/);
+  assert.match(renderer,/tree\.removeEventListener\('dragover',\s*onDrag,\s*true\)/);
+  assert.match(renderer,/dropFrames\.values\(\)/);
+  assert.match(renderer,/getComputedStyle\(tree\)\.getPropertyValue\('--vh-action-gutter-width'\)/);
+  assert.doesNotMatch(renderer,/event\.preventDefault\(\).*dragover/);
+});
+test('drop target alignment reads geometry in logarithmic scans and adapts child drops',()=>{
+  assert.match(renderer,/const treeGuideRows = new WeakMap/);
+  assert.match(renderer,/const mid = \(low \+ high\) >> 1/);
+  assert.match(renderer,/const childDrop = top > rect.top \+ 4 && top < rect.bottom - 4/);
+  assert.match(renderer,/result.layout.base \+ \(node.depth \+ \.5\) \* step/);
+  assert.match(renderer,/treeGuideRows.set\(tree, group\)/);
 });

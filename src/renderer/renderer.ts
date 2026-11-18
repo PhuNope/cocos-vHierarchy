@@ -1030,7 +1030,7 @@
     const findParent=(index:number):number|null=>{
       let at:number|null=index,guard=0;
       while(at!==null && guard++<40){
-        const entry=nodes[at];
+        const entry:VHierarchyGuides.Node|undefined=nodes[at];
         if(!entry?.valid)return null;
         if(entry.depth===insertionDepth-1)return at;
         if(entry.depth<insertionDepth-1)return null;

@@ -16,7 +16,7 @@
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch41-drag-path-dashes';
+  const BUILD_ID = '0.1.1-patch42-dotted-node-outline';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -187,9 +187,46 @@
       width:var(--vh-guide-drop-width,var(--vh-guide-width)) !important;
       opacity:1 !important;
     }
+    /* The native elbow is ONE pseudo element with left+bottom borders.
+       Dash both sides using the SAME 2px-on/3px-off paint as the trunk.
+       Native CSS "dashed" border uses a different dot length and caused
+       uneven segments at every elbow. Do not draw a second elbow. */
     .tree[hoving] > .tree-node[data-vh-drop-dashed-elbow='true'] > ui-drag-item.drag-item::after {
-      border-left-style:dashed !important;
-      border-left-color:var(--color-focus-border,#47bdf1) !important;
+      border-left-color:transparent !important;
+      border-bottom-color:transparent !important;
+      border-bottom-left-radius:0 !important;
+      background-image:
+        repeating-linear-gradient(to bottom,var(--color-focus-border,#47bdf1) 0px,var(--color-focus-border,#47bdf1) 2px,transparent 2px,transparent 5px),
+        repeating-linear-gradient(to right,var(--color-focus-border,#47bdf1) 0px,var(--color-focus-border,#47bdf1) 2px,transparent 2px,transparent 5px) !important;
+      background-position:left top,left bottom !important;
+      background-size:1px 100%,100% 1px !important;
+      background-repeat:no-repeat !important;
+    }
+    /* The native drop box is still full-sized for Cocos hit geometry.
+       For center-on-node intent, replace only its visible native outline with
+       a short dashed outline around the hovered node name/branch. The left
+       action gutter and far-right Layer/TS metadata aren't outlined. */
+    .content > .tree[data-vh-lock-gutter][hoving]:not([searching]) + .drop-box[data-vh-node-outline='true'] {
+      border-color:transparent !important;
+    }
+    .content > .tree[data-vh-lock-gutter][hoving]:not([searching]) + .drop-box[data-vh-node-outline='true'] > .horizontal-line {
+      visibility:hidden !important;
+    }
+    .content > .tree[data-vh-lock-gutter][hoving]:not([searching]) + .drop-box[data-vh-node-outline='true']::before {
+      content:''; position:absolute;
+      left:var(--vh-node-outline-left);
+      top:var(--vh-node-outline-top);
+      width:var(--vh-node-outline-width);
+      height:var(--vh-node-outline-height);
+      box-sizing:border-box; pointer-events:none; z-index:4;
+      background-image:
+        repeating-linear-gradient(to right,var(--color-focus-border,#47bdf1) 0px,var(--color-focus-border,#47bdf1) 2px,transparent 2px,transparent 5px),
+        repeating-linear-gradient(to right,var(--color-focus-border,#47bdf1) 0px,var(--color-focus-border,#47bdf1) 2px,transparent 2px,transparent 5px),
+        repeating-linear-gradient(to bottom,var(--color-focus-border,#47bdf1) 0px,var(--color-focus-border,#47bdf1) 2px,transparent 2px,transparent 5px),
+        repeating-linear-gradient(to bottom,var(--color-focus-border,#47bdf1) 0px,var(--color-focus-border,#47bdf1) 2px,transparent 2px,transparent 5px);
+      background-position:left top,left bottom,left top,right top;
+      background-size:100% 2px,100% 2px,2px 100%,2px 100%;
+      background-repeat:no-repeat;
     }
     .content > .tree[hoving] + .drop-box {
       z-index:2 !important; pointer-events:none !important;
@@ -813,7 +850,40 @@
   const DROP_DASH_IMAGE='repeating-linear-gradient(to bottom, var(--color-focus-border,#47bdf1) 0px, var(--color-focus-border,#47bdf1) 2px, transparent 2px, transparent 5px)';
   const DROP_GUIDE_PROPS=['--vh-guide-drop-images','--vh-guide-drop-positions',
     '--vh-guide-drop-sizes','--vh-guide-drop-width'];
+  const NODE_OUTLINE_PROPS=['--vh-node-outline-left','--vh-node-outline-top',
+    '--vh-node-outline-width','--vh-node-outline-height'];
+  function clearNodeOutline(box:HTMLElement):void {
+    if (box.hasAttribute('data-vh-node-outline')) box.removeAttribute('data-vh-node-outline');
+    for (const key of NODE_OUTLINE_PROPS)
+      if (box.style.getPropertyValue(key)) box.style.removeProperty(key);
+  }
+  /** Only paints a shorter visual outline. Cocos owns box size and drop intent. */
+  function syncNodeOutline(box:HTMLElement, target:Item, nativeRect:DOMRect, rowRect:DOMRect):void {
+    const dragRect=target.drag.getBoundingClientRect();
+    const left=Math.max(nativeRect.left+2,dragRect.left+1);
+    // Cocos' ui-rename-input fills the row, so calculate the *text* extent
+    // rather than using its stretched element width (which includes Layer).
+    const nameLeft=target.nameEl?.getBoundingClientRect().left ??
+      (dragRect.left+Math.max(20,target.anchor||20));
+    const labelWidth=Math.max(38,Math.min(380,(target.name||'').length*7.2));
+    const right=Math.min(nativeRect.right-2,Math.max(left+74,nameLeft+labelWidth+14));
+    const top=Math.max(nativeRect.top,Math.min(rowRect.top,nativeRect.bottom-2));
+    const bottom=Math.min(nativeRect.bottom,rowRect.bottom);
+    if (!Number.isFinite(left+right+top+bottom) || right-left<14 || bottom-top<3) {
+      clearNodeOutline(box);return;
+    }
+    const values:Record<string,string>={
+      '--vh-node-outline-left':(Math.round((left-nativeRect.left-2)*2)/2)+'px',
+      '--vh-node-outline-top':(Math.round((top-nativeRect.top-2)*2)/2)+'px',
+      '--vh-node-outline-width':(Math.round((right-left)*2)/2)+'px',
+      '--vh-node-outline-height':(Math.round((bottom-top)*2)/2)+'px',
+    };
+    for (const key of NODE_OUTLINE_PROPS)
+      if (box.style.getPropertyValue(key)!==values[key])box.style.setProperty(key,values[key]);
+    if (!box.hasAttribute('data-vh-node-outline'))box.setAttribute('data-vh-node-outline','true');
+  }
   function clearNativeDropPaint(box: HTMLElement): void {
+    clearNodeOutline(box);
     for (const row of nativeDropPaintedRows.get(box) || []) {
       row.removeAttribute('data-vh-drop-dashed');
       row.removeAttribute('data-vh-drop-dashed-elbow');
@@ -925,6 +995,8 @@
     const centerHover=Math.abs(positionY-center)<=Math.min(6,targetRect.height*.27);
     const inserting=!centerHover;
     const nativeRect=box.getBoundingClientRect();
+    if (centerHover) syncNodeOutline(box,target,nativeRect,targetRect);
+    else clearNodeOutline(box);
     // The Cocos insertion box can be tall for EITHER parent/sibling.
     // Its nearest BORDER is a visual endpoint, never a drop-intent classifier.
     const borderY=Math.abs(positionY-nativeRect.top)<=Math.abs(positionY-nativeRect.bottom)

@@ -147,7 +147,12 @@ test('native Cocos horizontal border is untouched and actual vHierarchy vertical
   assert.match(renderer,/background-image:var\(--vh-guide-drop-images\) !important/);
   assert.match(renderer,/background-position:var\(--vh-guide-drop-positions\) !important/);
   assert.match(renderer,/background-size:var\(--vh-guide-drop-sizes\) !important/);
-  assert.match(renderer,/border-left-style:dashed !important/);
+  assert.match(renderer,/border-left-color:transparent !important/);
+  assert.match(renderer,/border-bottom-color:transparent !important/);
+  assert.match(renderer,/background-size:1px 100%,100% 1px !important/);
+  assert.doesNotMatch(renderer,/border-left-style:dashed !important/);
+  assert.match(renderer,/\.drop-box\[data-vh-node-outline='true'\]::before/);
+  assert.match(renderer,/\.drop-box\[data-vh-node-outline='true'\] > \.horizontal-line \{\s*visibility:hidden !important/);
   assert.match(renderer,/repeating-linear-gradient\(to bottom/);
   assert.doesNotMatch(renderer,/\.drop-box\[data-vh-thin-insert='true'\] \{/);
   assert.doesNotMatch(renderer,/\.drop-box > \.horizontal-line \{\s*translate:/);
@@ -224,7 +229,7 @@ test('guide shortcuts never cancel mousedown or pointerdown required for native 
 });
 
 test('new plugin build replaces stale renderer and CSS',()=>{
-  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch41-drag-path-dashes'/);
+  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch42-dotted-node-outline'/);
   assert.match(renderer,/if \(w\.__vHierarchy388\.buildId === BUILD_ID\)/);
   assert.match(renderer,/w\.__vHierarchy388\.stop\(\)/);
   assert.match(renderer,/delete w\.__vHierarchy388/);
@@ -304,4 +309,55 @@ test('passive dragover observes position only; does not change native drop actio
   assert.ok(a>0&&b>a);
   const handler=renderer.slice(a,b);
   assert.doesNotMatch(handler,/preventDefault|stopPropagation|stopImmediatePropagation/);
+});
+
+
+test('center hover paints a short dotted node outline excluding left actions and right metadata',()=>{
+  const start=renderer.indexOf('function clearNodeOutline(box) {');
+  const end=renderer.indexOf('function clearNativeDropPaint(box) {',start);
+  assert.ok(start>0&&end>start,'compiled outline helper is available');
+  const attrs=new Map(),css=new Map();
+  const box={
+    hasAttribute:k=>attrs.has(k),getAttribute:k=>attrs.get(k)||null,
+    setAttribute:(k,v)=>attrs.set(k,v),removeAttribute:k=>attrs.delete(k),
+    style:{
+      getPropertyValue:k=>css.get(k)||'',
+      setProperty:(k,v)=>css.set(k,v),
+      removeProperty:k=>css.delete(k),
+    },
+  };
+  const target={
+    name:'Camera',anchor:40,
+    drag:{getBoundingClientRect:()=>({left:53})},
+    nameEl:{getBoundingClientRect:()=>({left:108,right:400})},
+  };
+  const env={NODE_OUTLINE_PROPS:[
+    '--vh-node-outline-left','--vh-node-outline-top',
+    '--vh-node-outline-width','--vh-node-outline-height',
+  ]};
+  vm.runInNewContext(renderer.slice(start,end)+
+    '\nthis.sync=syncNodeOutline;this.clear=clearNodeOutline;',env);
+  env.sync(box,target,
+    {left:0,top:95,right:463,bottom:215},
+    {left:53,top:115,right:463,bottom:135});
+  assert.equal(attrs.get('data-vh-node-outline'),'true');
+  assert.equal(css.get('--vh-node-outline-left'),'52px');
+  assert.equal(css.get('--vh-node-outline-top'),'18px');
+  assert.equal(css.get('--vh-node-outline-height'),'20px');
+  const width=parseFloat(css.get('--vh-node-outline-width'));
+  assert.ok(width>=75&&width<280,'outline is limited to the visible node, not 463px row');
+  env.clear(box);
+  assert.equal(attrs.has('data-vh-node-outline'),false);
+  assert.equal(css.size,0);
+});
+
+test('parent outline uses four matching dotted gradients; sibling horizontal indicator remains Cocos-native',()=>{
+  assert.match(renderer,/\\.drop-box\\[data-vh-node-outline='true'\\] \\{\\s*border-color:transparent !important/);
+  assert.match(renderer,/background-position:left top,left bottom,left top,right top/);
+  assert.match(renderer,/background-size:100% 2px,100% 2px,2px 100%,2px 100%/);
+  assert.match(renderer,/if \\(centerHover\\)\\s*syncNodeOutline\\(box, target, nativeRect, targetRect\\)/);
+  assert.match(renderer,/else\\s*clearNodeOutline\\(box\\)/);
+  assert.match(renderer,/function clearNativeDropPaint\\(box\\) \\{\\s*clearNodeOutline\\(box\\)/);
+  assert.match(renderer,/\\.content > \\.tree\\[hoving\\] \\+ \\.drop-box \\{\\s*z-index:2 !important; pointer-events:none !important/);
+  assert.doesNotMatch(renderer,/\\.drop-box\\[data-vh-thin-insert='true'\\]/);
 });

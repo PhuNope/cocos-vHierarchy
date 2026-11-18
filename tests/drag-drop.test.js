@@ -195,8 +195,8 @@ test('legacy drop markup is removed when upgrading from Patch 36, not reintroduc
 
 test('native Cocos retains its original parent and sibling drop target',()=>{
   assert.match(renderer,/The HORIZONTAL drop border and parent outline are 100% native Cocos/);
-  assert.match(renderer,/const markerRect=marker!\.getBoundingClientRect\(\)/);
-  assert.match(renderer,/p\.level===best\.level\?DROP_DASH_IMAGE:p\.image/);
+  assert.match(renderer,/const markerRect\s*=\s*marker\.getBoundingClientRect\(\)/);
+  assert.match(renderer,/p\.level\s*===\s*best\.level\s*\?\s*DROP_DASH_IMAGE\s*:\s*p\.image/);
   assert.doesNotMatch(renderer,/const nativeParentArea/);
   assert.doesNotMatch(renderer,/dropMode\(pointer/);
   assert.doesNotMatch(renderer,/setAttribute\('data-vh-drop-mode'/);

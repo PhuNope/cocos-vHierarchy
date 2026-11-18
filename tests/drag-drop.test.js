@@ -138,21 +138,21 @@ test('native Cocos owns both parent and sibling drop intent: no custom row class
   assert.match(renderer,/clearLegacyDropPreview\(tree\)/);
 });
 
-test('visual-only native dotted marker aligns with hierarchy 20px Active gutter',()=>{
-  assert.match(renderer,/\.tree\[data-vh-lock-gutter\]:not\(\[searching\]\) \+ \.drop-box > \.vertical-line,/);
-  assert.match(renderer,/\.drop-box > \.horizontal-line \{\s*translate:var\(--vh-drop-rail-shift\) 0 !important/);
+test('native Cocos horizontal border is untouched and actual vHierarchy vertical rail changes to dashed',()=>{
+  assert.match(renderer,/\.drop-box > \.vertical-line \{\s*translate:var\(--vh-drop-rail-shift\) 0 !important/);
   assert.match(renderer,/--vh-drop-rail-shift:0px/);
   assert.match(renderer,/--vh-drop-rail-shift:20px/);
-  assert.doesNotMatch(renderer,/clip-path:inset\(-1000px -1000px -1000px 20px\)/);
-  assert.doesNotMatch(renderer,/border-left-color:transparent !important/);
-  assert.match(renderer,/\.tree\[hoving\] > \.tree-node > \.drag-item > \.vh-action-gutter \{\s*pointer-events:none !important/);
-  assert.match(renderer,/\.drop-box\[data-vh-thin-insert='true'\] \{/);
-  assert.match(renderer,/transparent var\(--vh-insert-rail-x\)/);
-  assert.match(renderer,/display:block !important; visibility:visible !important/);
-  assert.match(renderer,/\.drop-box\[data-vh-thin-insert='true'\] > \.horizontal-line \{\s*visibility:hidden !important/);
+  assert.match(renderer,/\.drop-box > \.vertical-line \{\s*visibility:hidden !important/);
+  assert.match(renderer,/\.tree\[hoving\] > \.tree-node\[data-vh-drop-dashed='true'\] > ui-drag-item\.drag-item::before/);
+  assert.match(renderer,/background-image:var\(--vh-guide-drop-images\) !important/);
+  assert.match(renderer,/border-left-style:dashed !important/);
+  assert.match(renderer,/repeating-linear-gradient\(to bottom/);
+  assert.doesNotMatch(renderer,/\.drop-box\[data-vh-thin-insert='true'\] \{/);
+  assert.doesNotMatch(renderer,/\.drop-box > \.horizontal-line \{\s*translate:/);
+  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*border-color:transparent/);
+  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*background-image:linear-gradient/);
+  assert.doesNotMatch(renderer,/clip-path:inset/);
   assert.doesNotMatch(renderer,/addEventListener\(['"]dragover/);
-  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*transform:translateX/);
-  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*pointer-events:auto/);
   assert.match(renderer,/--vh-action-gutter-width:22px/);
   assert.match(renderer,/--vh-action-gutter-width:42px/);
 });
@@ -193,15 +193,15 @@ test('legacy drop markup is removed when upgrading from Patch 36, not reintroduc
   assert.doesNotMatch(renderer,/setAttribute\('data-vh-drop-mode'/);
 });
 
-test('native Cocos determines drop intent; only clearly thin insertion preview changes paint',()=>{
-  assert.match(renderer,/Native Cocos alone determines parent versus sibling insertion/);
-  assert.match(renderer,/const thin = area\.height > 0 && area\.height <= 5/);
-  assert.match(renderer,/const x = Math\.round\(rail\.left - area\.left\)/);
-  assert.match(renderer,/const valid = Number\.isFinite\(x\)/);
+test('native Cocos retains its original parent and sibling drop target',()=>{
+  assert.match(renderer,/No synthetic dotted line|No synthetic dotted/);
+  assert.match(renderer,/const markerRect=marker!\.getBoundingClientRect\(\)/);
+  assert.match(renderer,/p\.level===best\.level\?DROP_DASH_IMAGE:p\.image/);
   assert.doesNotMatch(renderer,/const nativeParentArea/);
   assert.doesNotMatch(renderer,/dropMode\(pointer/);
   assert.doesNotMatch(renderer,/setAttribute\('data-vh-drop-mode'/);
   assert.doesNotMatch(renderer,/addEventListener\(['"]dragover/);
+  assert.doesNotMatch(renderer,/const thin = area\.height/);
 });
 
 test('selected normal guide highlight and native Prefab text are unchanged',()=>{
@@ -222,7 +222,7 @@ test('guide shortcuts never cancel mousedown or pointerdown required for native 
 });
 
 test('new plugin build replaces stale renderer and CSS',()=>{
-  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch39-native-rail-junction'/);
+  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch40-guide-line-dash'/);
   assert.match(renderer,/if \(w\.__vHierarchy388\.buildId === BUILD_ID\)/);
   assert.match(renderer,/w\.__vHierarchy388\.stop\(\)/);
   assert.match(renderer,/delete w\.__vHierarchy388/);
@@ -237,27 +237,41 @@ test('regular tree updates still detect native expand/select without drag observ
   assert.doesNotMatch(renderer,/MutationObserver\(\(\) => requestDropUpdate/);
 });
 
-test('thin native insertion line begins at actual dotted X without changing parent preview',()=>{
-  const start=renderer.indexOf('function syncNativeDropPaint(box) {');
+test('target branch changes existing solid rail into dots and restores it on drag exit',()=>{
+  const start=renderer.indexOf('function clearNativeDropPaint(box) {');
   const end=renderer.indexOf('function observeNativeDropPaint(tree) {',start);
   assert.ok(start>0&&end>start);
-  const env={state:{options:{enabled:true}}};
+  function el(){
+    const a=new Map(),s=new Map();
+    return {
+      a,s,hasAttribute:k=>a.has(k),getAttribute:k=>a.get(k)||null,
+      setAttribute:(k,v)=>a.set(k,v),removeAttribute:k=>a.delete(k),
+      style:{getPropertyValue:k=>s.get(k)||'',setProperty:(k,v)=>s.set(k,v),removeProperty:k=>s.delete(k)},
+    };
+  }
+  const tree=el(),row=el(),box=el();
+  tree.classList={contains:k=>k==='tree'};
+  tree.setAttribute('hoving','');
+  row.setAttribute('data-vh-guide','true');
+  row.setAttribute('data-vh-elbow','true');
+  row.parentElement=tree;
+  row.getBoundingClientRect=()=>({top:100,bottom:120});
+  const drag={getBoundingClientRect:()=>({left:20})};
+  const item={row,drag,guidePaint:[{level:2,image:'linear-gradient(#aaaaaa,#aaaaaa)',position:'69px top',size:'1px 100%'}],
+    guide:{index:0,result:{nodes:[{valid:true,depth:2,offset:0}],layout:{base:19,step:20}}}};
+  box.previousElementSibling=tree;
+  box.querySelector=()=>({getBoundingClientRect:()=>({top:100,bottom:120,left:53,height:20})});
+  const env={state:{options:{enabled:true,hierarchyLines:true}},views:[item],nativeDropPaintedRows:new Map()};
   vm.runInNewContext(renderer.slice(start,end)+'\nthis.sync=syncNativeDropPaint;',env);
-  const attrs=new Map(),css=new Map();
-  const style={getPropertyValue:k=>css.get(k)||'',setProperty:(k,v)=>css.set(k,v),removeProperty:k=>css.delete(k)};
-  let height=2,left=69;
-  const marker={getBoundingClientRect:()=>({left,height:10})};
-  const tree={classList:{contains:k=>k==='tree'},hasAttribute:k=>k==='hoving'};
-  const box={previousElementSibling:tree,querySelector:()=>marker,
-    getBoundingClientRect:()=>({left:27,height,width:420}),style,
-    getAttribute:k=>attrs.get(k)||null,
-    setAttribute:(k,v)=>attrs.set(k,v),removeAttribute:k=>attrs.delete(k)};
   env.sync(box);
-  assert.equal(attrs.get('data-vh-thin-insert'),'true');
-  assert.equal(css.get('--vh-insert-rail-x'),'42px');
-  height=40;env.sync(box);
-  assert.equal(attrs.has('data-vh-thin-insert'),false);
-  assert.equal(css.has('--vh-insert-rail-x'),false);
-  height=2;left=500;env.sync(box);
-  assert.equal(attrs.has('data-vh-thin-insert'),false);
+  assert.equal(tree.a.get('data-vh-dotted-native-replaced'),'true');
+  assert.equal(row.a.get('data-vh-drop-dashed'),'true');
+  assert.equal(row.a.get('data-vh-drop-dashed-elbow'),'true');
+  assert.match(row.s.get('--vh-guide-drop-images'),/repeating-linear-gradient/);
+  tree.removeAttribute('hoving');
+  env.sync(box);
+  assert.equal(tree.a.has('data-vh-dotted-native-replaced'),false);
+  assert.equal(row.a.has('data-vh-drop-dashed'),false);
+  assert.equal(row.a.has('data-vh-drop-dashed-elbow'),false);
+  assert.equal(row.s.has('--vh-guide-drop-images'),false);
 });

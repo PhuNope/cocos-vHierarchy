@@ -11,11 +11,12 @@
   interface CustomIcon { id: string; name: string; }
   interface State { options: Opts; appearances: Record<string, Appearance>; prefabAppearances: Record<string, Appearance>; bookmarks: Bookmark[]; customIcons: CustomIcon[]; }
   interface TreeDump { uuid?: string; name?: string; depth?: number; parent?: string; active?: boolean; locked?: boolean; readonly?: boolean; isScene?: boolean; components?: Array<{ type?: string; extends?: string[] }>; prefab?: { state?: number; assetUuid?: string; isAddedChild?: boolean }; level?: string; path?: string; isPrefabRoot?: boolean; layer?: unknown; }
-  interface Item { guide?: { group: Item[]; index: number; result: VHierarchyGuides.Result }; prefabKey?: string | null; ancestorIds?: string[]; row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; nameEl: HTMLElement | null; depth: number; padding: number; margin: number; anchor: number; searching: boolean; }
+  interface GuideLayer { level:number; image:string; position:string; size:string; }
+  interface Item { guidePaint?: GuideLayer[]; guide?: { group: Item[]; index: number; result: VHierarchyGuides.Result }; prefabKey?: string | null; ancestorIds?: string[]; row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; nameEl: HTMLElement | null; depth: number; padding: number; margin: number; anchor: number; searching: boolean; }
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch39-native-rail-junction';
+  const BUILD_ID = '0.1.1-patch40-guide-line-dash';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -163,45 +164,33 @@
       padding-left:var(--vh-action-gutter-width) !important;
     }
     .tree[data-vh-lock-gutter][data-vh-quick-toggle] { --vh-action-gutter-width:42px; }
-    /* Native Cocos alone determines parent versus sibling insertion and owns
-       .drop-box geometry. Align only the inner dashed rail with our gutter. */
-    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box {
-      --vh-drop-rail-shift:0px;
-    }
+    /* The HORIZONTAL drop border and parent outline are 100% native Cocos.
+       Neither box geometry, its borders nor .horizontal-line are rewritten. */
+    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box { --vh-drop-rail-shift:0px; }
     .content > .tree[data-vh-lock-gutter][data-vh-quick-toggle]:not([searching]) + .drop-box {
       --vh-drop-rail-shift:20px;
     }
-    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .vertical-line,
-    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .horizontal-line {
+    /* Normalize ONLY the hidden native vertical marker's coordinate for
+       matching, with its existing 20px Active-gutter correction. */
+    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .vertical-line {
       translate:var(--vh-drop-rail-shift) 0 !important;
     }
-    /* Restore the native dashed vertical in parent preview as well as reorder. */
-    .content > .tree[data-vh-lock-gutter][hoving]:not([searching]) + .drop-box > .vertical-line {
-      display:block !important; visibility:visible !important;
-      opacity:1 !important; z-index:3 !important; min-height:10px;
-      pointer-events:none !important;
-    }
-    /* A clearly thin native insertion bar is drawn from the ACTUAL dotted
-       line X to the right. Never clip a tall native drop-box: Cocos may use
-       a tall box for a parent OR a sibling, so parent highlighting is kept. */
-    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box[data-vh-thin-insert='true'] {
-      border-color:transparent !important;
-      background-image:linear-gradient(to right,
-        transparent 0,transparent var(--vh-insert-rail-x),
-        var(--color-focus-border) var(--vh-insert-rail-x)) !important;
-      background-origin:border-box !important;
-      background-position:left top !important;
-      background-size:100% 2px !important;
-      background-repeat:no-repeat !important;
-    }
-    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box[data-vh-thin-insert='true'] > .horizontal-line {
+    .content > .tree[data-vh-lock-gutter][data-vh-dotted-native-replaced='true'][hoving]:not([searching]) + .drop-box > .vertical-line {
       visibility:hidden !important;
     }
-    /* Native preview stays above tinted and selected row backgrounds. */
+    /* Replace the EXISTING gray guide image with dashes on the target branch:
+       not another vertical line stacked on top of the solid vHierarchy rail. */
+    .tree[hoving] > .tree-node[data-vh-drop-dashed='true'] > ui-drag-item.drag-item::before {
+      background-image:var(--vh-guide-drop-images) !important;
+      opacity:1 !important;
+    }
+    .tree[hoving] > .tree-node[data-vh-drop-dashed-elbow='true'] > ui-drag-item.drag-item::after {
+      border-left-style:dashed !important;
+      border-left-color:var(--color-focus-border,#47bdf1) !important;
+    }
     .content > .tree[hoving] + .drop-box {
       z-index:2 !important; pointer-events:none !important;
     }
-    /* Gutter is decorative while dragging: do not intercept row hit testing. */
     .tree[hoving] > .tree-node > .drag-item > .vh-action-gutter {
       pointer-events:none !important;
     }
@@ -391,6 +380,7 @@
   let observer: MutationObserver | null = null;
   const treeObservers = new Map<HTMLElement, MutationObserver>();
   const nativeDropPaintWatchers = new Map<HTMLElement, MutationObserver>();
+  const nativeDropPaintedRows = new Map<HTMLElement, Set<HTMLElement>>();
   const layerLookup = new VHierarchyLayers.Lookup(uuid => req('scene','query-node', uuid), () => schedule());
   const prefabPromotions = new Set<string>();
   const priorRows = new WeakMap<HTMLElement, {uuid: string; path: string; appearance: Appearance}>();
@@ -544,7 +534,7 @@
   /** Geometry is measured from native drag item styles, not an estimated padding step. */
   function updateGuides(items: Item[]): void {
     if (!state.options.enabled || !state.options.hierarchyLines || items.some(x => x.searching)) {
-      items.forEach(x => { x.guide=undefined; clearGuides(x.row); }); return;
+      items.forEach(x => { x.guide=undefined; x.guidePaint=undefined; clearGuides(x.row); }); return;
     }
     const result = VHierarchyGuides.calculate(items.map(item => ({
       padding:item.padding, margin:item.margin, anchor:item.anchor, searching:item.searching,
@@ -555,16 +545,17 @@
     for (let i = 0; i < items.length; i++) {
       const {row} = items[i]; const entry = result.nodes[i];
       items[i].guide = entry.valid ? { group:items, index:i, result } : undefined;
-      if (!entry.valid || entry.depth < 1 || entry.depth > 32) { clearGuides(row); continue; }
+      if (!entry.valid || entry.depth < 1 || entry.depth > 32) { items[i].guidePaint=undefined; clearGuides(row); continue; }
       const {base, step, mode} = result.layout;
       const rails = state.options.guideMode === 'minimal'
         ? [...entry.rails.filter(r => r.shape !== 'lower'), {level:entry.depth, shape:entry.hasNextSibling ? 'full' : 'last'} as VHierarchyGuides.Rail]
         : entry.rails;
-      const paint: Array<{image:string;position:string;size:string}> = [];
+      const paint: GuideLayer[] = [];
       for (const rail of rails) {
         const x = base + (rail.level - 0.5) * step;
         if (!(x > 1 && x < entry.indent - 1)) continue;
         paint.push({
+          level:rail.level,
           image: rail.shape === 'last'
             ? `linear-gradient(to bottom, ${GUIDE_COLOR} 0%, ${GUIDE_COLOR} 78%, transparent 100%)`
             : `linear-gradient(${GUIDE_COLOR},${GUIDE_COLOR})`,
@@ -578,9 +569,10 @@
       for (const level of selected[i].rails) {
         const x = base + (level - 0.5) * step;
         if (!(x > 1 && x < entry.indent - 1)) continue;
-        paint.unshift({image:`linear-gradient(${GUIDE_SELECTED_COLOR},${GUIDE_SELECTED_COLOR})`,
+        paint.unshift({level,image:`linear-gradient(${GUIDE_SELECTED_COLOR},${GUIDE_SELECTED_COLOR})`,
           position:`${x}px top`, size:'1.5px 100%'});
       }
+      items[i].guidePaint=paint;
       changeAttr(row,'data-vh-guide-selected', selected[i].rails.length || selected[i].elbow ? 'true' : undefined);
       changeAttr(row,'data-vh-guide-selected-elbow',selected[i].elbow ? 'true' : undefined);
       changeAttr(row,'data-vh-guide-through-elbow',selected[i].throughElbow ? 'true' : undefined);
@@ -812,37 +804,106 @@
   }
   /** Watch native Vue tree changes so guides render in the expand frame, not at
    * the 1.4s resilience polling interval. Ignore changes from our own controls. */
-  /** Read native painted geometry only; never create parent/drop intent. */
+  const DROP_DASH_IMAGE='repeating-linear-gradient(to bottom, var(--color-focus-border,#47bdf1) 0px, var(--color-focus-border,#47bdf1) 2px, transparent 2px, transparent 5px)';
+  function clearNativeDropPaint(box: HTMLElement): void {
+    for (const row of nativeDropPaintedRows.get(box) || []) {
+      row.removeAttribute('data-vh-drop-dashed');
+      row.removeAttribute('data-vh-drop-dashed-elbow');
+      row.style.removeProperty('--vh-guide-drop-images');
+    }
+    nativeDropPaintedRows.delete(box);
+    const tree=box.previousElementSibling as HTMLElement|null;
+    if (tree?.hasAttribute('data-vh-dotted-native-replaced'))
+      tree.removeAttribute('data-vh-dotted-native-replaced');
+    // Clean up style remnants of Patch 39.
+    if (box.hasAttribute('data-vh-thin-insert'))
+      box.removeAttribute('data-vh-thin-insert');
+    if (box.style.getPropertyValue('--vh-insert-rail-x'))
+      box.style.removeProperty('--vh-insert-rail-x');
+  }
+  /** Read the native dashed-rail position; convert only the original vH
+   * line for that branch from solid to dashed. Never classify parent/sibling
+   * using drop-box height, and never draw over the native horizontal bar. */
   function syncNativeDropPaint(box: HTMLElement): void {
-    const tree = box.previousElementSibling as HTMLElement | null;
-    const marker = box.querySelector(':scope > .vertical-line') as HTMLElement | null;
-    const active = !!(state.options.enabled && tree?.classList.contains('tree') &&
-      tree.hasAttribute('hoving') && !tree.hasAttribute('searching') && marker);
-    if (!active) {
-      if (box.getAttribute('data-vh-thin-insert'))
-        box.removeAttribute('data-vh-thin-insert');
-      if (box.style.getPropertyValue('--vh-insert-rail-x'))
-        box.style.removeProperty('--vh-insert-rail-x');
-      return;
+    const tree=box.previousElementSibling as HTMLElement|null;
+    const marker=box.querySelector(':scope > .vertical-line') as HTMLElement|null;
+    const active=!!(state.options.enabled && state.options.hierarchyLines &&
+      tree?.classList.contains('tree') && tree.hasAttribute('hoving') &&
+      !tree.hasAttribute('searching') && marker);
+    if (!active) { clearNativeDropPaint(box); return; }
+    const markerRect=marker!.getBoundingClientRect();
+    if (!Number.isFinite(markerRect.left) || markerRect.height<=0) {
+      clearNativeDropPaint(box); return;
     }
-    const area = box.getBoundingClientRect();
-    const rail = marker!.getBoundingClientRect();
-    // getBoundingClientRect includes BOTH Cocos' indentation and our translate.
-    const x = Math.round(rail.left - area.left);
-    const thin = area.height > 0 && area.height <= 5;
-    const valid = Number.isFinite(x) && x > 0 && x < area.width - 2 && rail.height > 0;
-    if (thin && valid) {
-      const pos = x + 'px';
-      if (box.style.getPropertyValue('--vh-insert-rail-x') !== pos)
-        box.style.setProperty('--vh-insert-rail-x', pos);
-      if (box.getAttribute('data-vh-thin-insert') !== 'true')
-        box.setAttribute('data-vh-thin-insert', 'true');
-    } else {
-      if (box.getAttribute('data-vh-thin-insert'))
-        box.removeAttribute('data-vh-thin-insert');
-      if (box.style.getPropertyValue('--vh-insert-rail-x'))
-        box.style.removeProperty('--vh-insert-rail-x');
+    // Native marker may lie one indent to the LEFT of the existing vH branch.
+    // Use the existing per-row rail coordinates and preserve other branches.
+    const candidates=new Map<number,{level:number;x:number;length:number;right:boolean;rows:Item[]}>();
+    for (const item of views) {
+      if (item.row.parentElement!==tree || !item.guide) continue;
+      const {result,index}=item.guide;
+      const entry=result.nodes[index];
+      if (!entry?.valid || entry.depth<1) continue;
+      const rect=item.row.getBoundingClientRect();
+      const overlap=Math.min(rect.bottom,markerRect.bottom+2)-Math.max(rect.top,markerRect.top-2);
+      if (overlap<=0) continue;
+      const dragLeft=item.drag.getBoundingClientRect().left;
+      const levels=new Set<number>((item.guidePaint||[]).map(p=>p.level));
+      if (item.row.hasAttribute('data-vh-elbow')) levels.add(entry.depth);
+      for (const level of levels) {
+        const x=dragLeft+entry.offset+result.layout.base+(level-.5)*result.layout.step;
+        const delta=Math.abs(x-markerRect.left);
+        if (!Number.isFinite(x) || delta>result.layout.step+4) continue;
+        let candidate=candidates.get(level);
+        if (!candidate) {
+          candidate={level,x,length:0,right:x>=markerRect.left-2,rows:[]};
+          candidates.set(level,candidate);
+        }
+        candidate.length+=overlap;
+        candidate.rows.push(item);
+      }
     }
+    const best=[...candidates.values()].sort((a,b)=>
+      Number(b.right)-Number(a.right) || b.length-a.length ||
+      Math.abs(a.x-markerRect.left)-Math.abs(b.x-markerRect.left))[0];
+    if (!best) { clearNativeDropPaint(box); return; }
+    const marked=new Set<HTMLElement>();
+    for (const item of best.rows) {
+      const row=item.row, layers=item.guidePaint||[];
+      const isRail=layers.some(p=>p.level===best.level);
+      const isElbow=row.hasAttribute('data-vh-elbow') &&
+        item.guide?.result.nodes[item.guide.index].depth===best.level;
+      if (!isRail && !isElbow) continue;
+      marked.add(row);
+      if (isRail) {
+        const images=layers.map(p=>p.level===best.level?DROP_DASH_IMAGE:p.image).join(', ');
+        if (row.style.getPropertyValue('--vh-guide-drop-images')!==images)
+          row.style.setProperty('--vh-guide-drop-images',images);
+        if (!row.hasAttribute('data-vh-drop-dashed'))
+          row.setAttribute('data-vh-drop-dashed','true');
+      } else {
+        row.removeAttribute('data-vh-drop-dashed');
+        row.style.removeProperty('--vh-guide-drop-images');
+      }
+      if (isElbow) {
+        if (!row.hasAttribute('data-vh-drop-dashed-elbow'))
+          row.setAttribute('data-vh-drop-dashed-elbow','true');
+      } else row.removeAttribute('data-vh-drop-dashed-elbow');
+    }
+    for (const row of nativeDropPaintedRows.get(box)||[]) if (!marked.has(row)) {
+      row.removeAttribute('data-vh-drop-dashed');
+      row.removeAttribute('data-vh-drop-dashed-elbow');
+      row.style.removeProperty('--vh-guide-drop-images');
+    }
+    if (marked.size) {
+      nativeDropPaintedRows.set(box,marked);
+      if (!tree!.hasAttribute('data-vh-dotted-native-replaced'))
+        tree!.setAttribute('data-vh-dotted-native-replaced','true');
+    } else clearNativeDropPaint(box);
+    // Previously installed Patch 39 may have left its runtime marker property.
+    if (box.hasAttribute('data-vh-thin-insert'))
+      box.removeAttribute('data-vh-thin-insert');
+    if (box.style.getPropertyValue('--vh-insert-rail-x'))
+      box.style.removeProperty('--vh-insert-rail-x');
   }
   function observeNativeDropPaint(tree: HTMLElement): void {
     const box = tree.nextElementSibling as HTMLElement | null;
@@ -857,7 +918,7 @@
   }
   function pruneNativeDropPaintWatchers(): void {
     for (const [box, watcher] of nativeDropPaintWatchers) if (!box.isConnected) {
-      watcher.disconnect(); nativeDropPaintWatchers.delete(box);
+      watcher.disconnect(); clearNativeDropPaint(box); nativeDropPaintWatchers.delete(box);
     }
   }
   function observeTree(tree: HTMLElement): void {
@@ -974,6 +1035,8 @@
           }
           previousTreePaths.set(tree,nextPaths);
           updateGuides(group);
+          const dropBox=tree.nextElementSibling as HTMLElement|null;
+          if (dropBox?.classList.contains('drop-box')) syncNativeDropPaint(dropBox);
           listen(rootHost);
         }
       }
@@ -1413,13 +1476,10 @@
     for (const watcher of treeObservers.values()) watcher.disconnect();
     treeObservers.clear();
     for (const [box, watcher] of nativeDropPaintWatchers) {
-      watcher.disconnect();
-      if (box.getAttribute('data-vh-thin-insert'))
-        box.removeAttribute('data-vh-thin-insert');
-      if (box.style.getPropertyValue('--vh-insert-rail-x'))
-        box.style.removeProperty('--vh-insert-rail-x');
+      watcher.disconnect(); clearNativeDropPaint(box);
     }
     nativeDropPaintWatchers.clear();
+    nativeDropPaintedRows.clear();
     for(const release of listeners) release(); listeners.length=0;
     for(const panel of panels())for(const r of roots(panel)){
       for(const tree of (r as Element).querySelectorAll?.('.tree[data-vh-lock-gutter],.tree[data-vh-quick-toggle]')||[]) {

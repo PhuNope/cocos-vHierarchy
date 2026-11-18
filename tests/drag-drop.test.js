@@ -150,8 +150,8 @@ test('native drag/drop owns events and no custom correction loop interferes with
   assert.doesNotMatch(renderer,/observeDropGuide\(tree\)/);
   assert.doesNotMatch(renderer,/treeGuideRows\.set/);
   assert.doesNotMatch(renderer,/--vh-drop-vertical-shift/);
-  assert.doesNotMatch(renderer,/addEventListener\(['"]dragover['"]/);
-  assert.doesNotMatch(renderer,/addEventListener\(['"]drop['"]/);
+  assert.match(renderer,/addEventListener\('dragover',\s*onDragOver,\s*\{\s*capture:\s*true,\s*passive:\s*true\s*\}\)/);
+  assert.match(renderer,/addEventListener\('drop',\s*onDrop,\s*true\)/);
   assert.doesNotMatch(renderer,/addEventListener\(['"]mousedown['"],\s*guideDown/);
 });
 test('native drop-box borders are transparent and only one bottom background line is drawn',()=>{
@@ -170,7 +170,7 @@ test('guide shortcuts never cancel mousedown or pointerdown required for native 
   assert.match(renderer,/root\.removeEventListener\('click', guideClick, true\)/);
 });
 test('new plugin build replaces a stale renderer instead of reusing its old CSS',()=>{
-  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch35-drop-intent'/);
+  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch36-pointer-drop-intent'/);
   assert.match(renderer,/if \(w\.__vHierarchy388\.buildId === BUILD_ID\)/);
   assert.match(renderer,/w\.__vHierarchy388\.stop\(\)/);
   assert.match(renderer,/delete w\.__vHierarchy388/);
@@ -189,7 +189,7 @@ test('drag dotted rail aligns to guide trunk instead of custom prefab icon for b
   assert.equal(expectedPaintedRail(true),55);
   assert.equal(expectedPaintedRail(false),35);
   assert.notEqual(expectedPaintedRail(true),75, 'must not move one indent too far toward icon');
-  assert.match(renderer,/Classify the native marker from its rendered height/);
+  assert.match(renderer,/native \.drop-box height cannot distinguish sibling reorder/);
   assert.doesNotMatch(renderer,/translate:40px 0 !important/);
   assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*translate:/);
   assert.match(renderer,/\.drop-box > \.horizontal-line \{\s*visibility:hidden !important/);
@@ -229,127 +229,60 @@ test('short native marker draws one insertion line; tall marker instead highligh
 });
 test('native Cocos pointer/drop handling and unrelated search marker remain intact',()=>{
   assert.match(renderer,/\.tree\[data-vh-lock-gutter\]:not\(\[searching\]\) \+ \.drop-box/);
-  assert.doesNotMatch(renderer,/addEventListener\(['"]dragover['"]/);
+  assert.match(renderer,/addEventListener\('dragover',\s*onDragOver,\s*\{\s*capture:\s*true,\s*passive:\s*true\s*\}\)/);
   assert.doesNotMatch(renderer,/addEventListener\(['"]mousedown['"],\s*guideDown/);
   assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*pointer-events:auto/);
 });
 
+
 function dropIntentHelpers() {
   const start=renderer.indexOf('function dropMode(');
   const end=renderer.indexOf('function clearDropTarget(',start);
-  assert.ok(start>0 && end>start,'compiled drop-intent helpers available');
-  const ctx={};
-  vm.runInNewContext(renderer.slice(start,end)+'\nthis.dropMode=dropMode;this.dropParentIndex=dropParentIndex;',ctx);
-  return ctx;
-}
-test('native height differentiates sibling insertion from hovering a full parent/subtree',()=>{
-  const {dropMode}=dropIntentHelpers();
-  assert.equal(dropMode(2,20),'insert');
-  assert.equal(dropMode(3,20),'insert');
-  assert.equal(dropMode(20,20),'parent');
-  assert.equal(dropMode(102,20),'parent');
-  assert.equal(dropMode(120,24),'parent');
-});
-test('parent highlight selects hovered actual parent, not a child from the box top or bottom',()=>{
-  const {dropParentIndex}=dropIntentHelpers();
-  // Screenshot: box from y46 to y146; hover is Node y146. The old code
-  // highlighted only a child insertion line and never the hovered parent.
-  const rows=[
-    {top:46,bottom:66,hovered:false},
-    {top:66,bottom:86,hovered:false},
-    {top:86,bottom:106,hovered:false},
-    {top:106,bottom:126,hovered:false},
-    {top:126,bottom:146,hovered:false},
-    {top:146,bottom:166,hovered:true},
-  ];
-  assert.equal(dropParentIndex(rows,46,146),5);
-  assert.equal(dropParentIndex(rows,46,146),5,'no spontaneous jump between siblings');
-  assert.equal(dropParentIndex(rows.map(r=>({...r,hovered:false})),46,146),0,
-    'Assets drag without hover uses top of marker, not unrelated descendant');
-  assert.equal(dropParentIndex(rows.map(r=>({...r,hovered:false})),400,500),-1);
-});
-test('parent mode has complete row/gutter highlight, insertion-only keeps one bottom line',()=>{
-  assert.match(renderer,/\.drop-box\[data-vh-drop-mode='parent'\] \{\s*background-image:none !important/);
-  assert.match(renderer,/\.drop-box\[data-vh-drop-mode='parent'\] > \.vertical-line/);
-  assert.match(renderer,/\.tree-node\[data-vh-drop-parent\] > \.drag-item \{\s*background-color:rgba\(34,143,178,\.3\) !important/);
-  assert.match(renderer,/\.tree-node\[data-vh-drop-parent\] > \.drag-item > \.vh-action-gutter/);
-  assert.match(renderer,/box-shadow:inset 0 0 0 1px var\(--color-focus-border,#47bdf1\) !important/);
-  assert.match(renderer,/background-position:left bottom !important/);
-  assert.doesNotMatch(renderer,/\.drop-box::before \{[^}]*height:2px/);
-});
-test('drop marker style mutations schedule a visual-only update and cleanup cancels it',()=>{
-  assert.match(renderer,/watcher.observe\(box,\s*\{\s*attributes:\s*true,\s*attributeFilter:\s*\['style'\]\s*\}\)/);
-  assert.match(renderer,/watcher.observe\(tree,\s*\{\s*attributes:\s*true,\s*attributeFilter:\s*\['hoving',\s*'searching'\]\s*\}\)/);
-  assert.match(renderer,/requestAnimationFrame\(\(\) => \{/);
-  assert.match(renderer,/clearDropTarget\(tree,\s*entry.box\)/);
-  assert.match(renderer,/entry.watcher.disconnect\(\)/);
-  assert.match(renderer,/parent.removeAttribute\('data-vh-drop-parent'\)/);
-  assert.match(renderer,/box.removeAttribute\('data-vh-drop-mode'\)/);
-  assert.doesNotMatch(renderer,/addEventListener\(['"]dragover['"]/);
-  assert.doesNotMatch(renderer,/addEventListener\(['"]mousedown['"],\s*guideDown/);
-});
-
-test('parent drop mode highlights the hovered parent row, then clears it when switching to reorder',()=>{
-  const start=renderer.indexOf('function clearDropTarget(');
-  const end=renderer.indexOf('function observeDropTarget(',start);
   assert.ok(start>0&&end>start);
-  const boxAttrs=new Map();
-  const makeRow=(id,top,hovered)=>({
-    id, attrs:new Map(),
-    matches:q=>q===':hover'&&hovered,
-    querySelector:q=>q===':scope > .drag-item'?{getBoundingClientRect:()=>({top,bottom:top+20,height:20})}:null,
-    setAttribute(k,v){this.attrs.set(k,v);},removeAttribute(k){this.attrs.delete(k);},
-  });
-  const child=makeRow('child',126,false);
-  const parent=makeRow('parent',146,true);
-  const first=makeRow('scene',46,false);
-  const nodes=[first,makeRow('light',66,false),makeRow('camera',86,false),makeRow('path',106,false),child,parent];
-  const box={
-    attrs:boxAttrs,
-    height:102,
-    setAttribute(k,v){boxAttrs.set(k,v);},removeAttribute(k){boxAttrs.delete(k);},
-    getBoundingClientRect(){return {left:35,top:46,bottom:46+this.height,width:400,height:this.height};},
-  };
-  const tree={
-    isConnected:true,
-    hovering:true,
-    hasAttribute:k=>k==='data-vh-lock-gutter'||(k==='hoving'&&tree.hovering),
-    querySelector:q=>q===':scope > .tree-node > .drag-item'?{getBoundingClientRect:()=>({height:20})}:
-      q===':scope > .tree-node:hover'?parent:null,
-    querySelectorAll:q=>q===':scope > .tree-node'?nodes:[],
-  };
-  const dropObservers=new Map([[tree,{box,parent:null}]]);
-  const {dropMode,dropParentIndex}=dropIntentHelpers();
-  const scope={stopped:false,state:{options:{enabled:true}},dropObservers,dropMode,dropParentIndex,
-    getComputedStyle:()=>({display:'block'})};
-  vm.runInNewContext(renderer.slice(start,end)+'\nthis.updateDropTarget=updateDropTarget;',scope);
-  scope.updateDropTarget(tree,box);
-  assert.equal(boxAttrs.get('data-vh-drop-mode'),'parent');
-  assert.equal(parent.attrs.get('data-vh-drop-parent'),'true');
-  assert.equal(child.attrs.has('data-vh-drop-parent'),false);
-  box.height=2;scope.updateDropTarget(tree,box);
-  assert.equal(boxAttrs.get('data-vh-drop-mode'),'insert');
-  assert.equal(parent.attrs.has('data-vh-drop-parent'),false);
-  box.height=102;scope.updateDropTarget(tree,box);
-  assert.equal(parent.attrs.get('data-vh-drop-parent'),'true');
-  tree.hovering=false;scope.updateDropTarget(tree,box);
-  assert.equal(boxAttrs.has('data-vh-drop-mode'),false);
-  assert.equal(parent.attrs.has('data-vh-drop-parent'),false);
+  const env={};
+  vm.runInNewContext(renderer.slice(start,end)+'\nthis.dropMode=dropMode;',env);
+  return env;
+}
+test('pointer enters middle of intended row for parent; edges stay insert despite tall native drop box',()=>{
+  const {dropMode}=dropIntentHelpers();
+  assert.equal(dropMode(100,100,20),'insert');
+  assert.equal(dropMode(104,100,20),'insert');
+  assert.equal(dropMode(106,100,20),'parent');
+  assert.equal(dropMode(110,100,20),'parent');
+  assert.equal(dropMode(114,100,20),'parent');
+  assert.equal(dropMode(116,100,20),'insert');
+  assert.equal(dropMode(120,100,20),'insert');
+  assert.equal(dropMode(NaN,100,20),'insert');
 });
-
-test('insertion hints do not enumerate every node or change native drag events',()=>{
-  const start=renderer.indexOf('function clearDropTarget(');
-  const end=renderer.indexOf('function observeDropTarget(',start);
-  const mode=dropIntentHelpers();
-  const box={attrs:new Map(),setAttribute(k,v){this.attrs.set(k,v);},removeAttribute(k){this.attrs.delete(k);},
-    getBoundingClientRect:()=>({width:420,height:2,top:100,bottom:102})};
-  const tree={isConnected:true,hasAttribute:k=>k==='hoving'||k==='data-vh-lock-gutter',
-    querySelector:q=>q===':scope > .tree-node > .drag-item'?{getBoundingClientRect:()=>({height:20})}:null,
-    querySelectorAll:()=>{throw Error('short insertion markers must not enumerate all nodes');}};
-  const dropObservers=new Map([[tree,{box,parent:null}]]);
-  const scope={stopped:false,state:{options:{enabled:true}},dropObservers,...mode,
-    getComputedStyle:()=>({display:'block'})};
-  vm.runInNewContext(renderer.slice(start,end)+'\nthis.updateDropTarget=updateDropTarget;',scope);
-  scope.updateDropTarget(tree,box);
-  assert.equal(box.attrs.get('data-vh-drop-mode'),'insert');
+test('expanded native drop-box alone never selects a parent; insertion stays native',()=>{
+  assert.match(renderer,/const pointer = entry\?\.pointer/);
+  assert.match(renderer,/const nativeParentArea = rect\.height > Math\.max\(8, bounds\.height \* \.55\)/);
+  assert.match(renderer,/nativeParentArea && dropMode\(pointer\.y, bounds\.top, bounds\.height\) === 'parent'/);
+  assert.doesNotMatch(renderer,/tree\.querySelector\(':scope > \.tree-node:hover'\)/);
+  assert.doesNotMatch(renderer,/function dropParentIndex/);
+});
+test('full parent overlay spans actual row and Lock/Active gutter without changing prefab label',()=>{
+  assert.match(renderer,/\.tree-node\[data-vh-drop-parent\]::before/);
+  assert.match(renderer,/left:calc\(0px - var\(--vh-action-gutter-width\)\)/);
+  assert.match(renderer,/border:1px solid var\(--color-focus-border,#47bdf1\)/);
+  assert.match(renderer,/pointer-events:none/);
+  assert.match(renderer,/\.drop-box\[data-vh-drop-mode='parent'\] \{\s*background-image:none !important/);
+});
+test('passive native dragover handler never cancels Cocos drag or mouse interactions',()=>{
+  assert.match(renderer,/tree\.addEventListener\('dragover', onDragOver, \{ capture: true, passive: true \}\)/);
+  assert.match(renderer,/tree\.removeEventListener\('dragover', entry\.onDragOver, true\)/);
+  assert.match(renderer,/tree\.addEventListener\('drop', onDrop, true\)/);
+  assert.match(renderer,/tree\.addEventListener\('dragend', onDrop, true\)/);
+  const start=renderer.indexOf('const onDragOver = (event) => {');
+  const end=renderer.indexOf('const onDrop = () => {',start);
+  assert.ok(start>0&&end>start);
+  const handler=renderer.slice(start,end);
+  assert.doesNotMatch(handler,/preventDefault|stopPropagation|stopImmediatePropagation/);
+});
+test('observer cancels updates, clears wrong parent, and unhooks on unload',()=>{
+  assert.match(renderer,/clearDropTarget\(tree, entry\.box\)/);
+  assert.match(renderer,/if \(entry\?\.parent && entry\.parent !== parent\)/);
+  assert.match(renderer,/entry\.parent\.removeAttribute\('data-vh-drop-parent'\)/);
+  assert.match(renderer,/dropObservers\.delete\(tree\)/);
+  assert.match(renderer,/for \(const \[tree, entry\] of dropObservers\)\s*detachDropObserver\(tree, entry\)/);
 });

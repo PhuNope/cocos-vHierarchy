@@ -125,12 +125,13 @@ test('legacy toolbar injected inside .content is migrated before drag drop',()=>
   assert.deepEqual(f.content.children,[f.tree,f.dropBox,f.scrollBar]);
 });
 
-test('native horizontal insertion line starts at dotted vertical trunk, without changing the drop target',()=>{
+test('native horizontal insertion line is painted once at the dotted trunk without moving the drop target',()=>{
   assert.match(renderer,/\.tree\[data-vh-lock-gutter\]:not\(\[searching\]\) \+ \.drop-box > \.vertical-line \{\s*translate:0px 0 !important/);
   assert.match(renderer,/\.tree\[data-vh-lock-gutter\]\[data-vh-quick-toggle\]:not\(\[searching\]\) \+ \.drop-box > \.vertical-line \{\s*translate:20px 0 !important/);
-  assert.match(renderer,/border-left-color:transparent !important/);
+  assert.match(renderer,/border-color:transparent !important/);
   assert.match(renderer,/\.content > \.tree\[hoving\] \+ \.drop-box \{\s*z-index:2 !important; pointer-events:none !important/);
   assert.match(renderer,/\.drop-box > \.horizontal-line \{\s*translate:var\(--vh-drop-rail-start\) 0 !important/);
+  assert.match(renderer,/background-position:left bottom !important/);
   assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*transform:translateX/);
   assert.match(renderer,/--vh-action-gutter-width:22px/);
   assert.match(renderer,/--vh-action-gutter-width:42px/);
@@ -153,10 +154,10 @@ test('native drag/drop owns events and no custom correction loop interferes with
   assert.doesNotMatch(renderer,/addEventListener\(['"]drop['"]/);
   assert.doesNotMatch(renderer,/addEventListener\(['"]mousedown['"],\s*guideDown/);
 });
-test('native drop-box solid left border is suppressed only while the corrected dotted rail is visible',()=>{
+test('native drop-box borders are transparent and only one bottom background line is drawn',()=>{
   // Creator 3.8.8 uses a 2px border on .drop-box AND a separate dashed vertical child.
   // Leaving the former visible produces the reported cyan line one indent outside.
-  assert.match(renderer,/\.tree\[data-vh-lock-gutter\]:not\(\[searching\]\) \+ \.drop-box \{\s*--vh-drop-rail-start:0px;\s*border-left-color:transparent !important/);
+  assert.match(renderer,/\.tree\[data-vh-lock-gutter\]:not\(\[searching\]\) \+ \.drop-box \{\s*--vh-drop-rail-start:0px;\s*border-color:transparent !important/);
   assert.match(renderer,/\.drop-box > \.vertical-line \{\s*translate:0px 0 !important/);
   assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*border-left-width:0/);
   assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*display:none/);
@@ -169,7 +170,7 @@ test('guide shortcuts never cancel mousedown or pointerdown required for native 
   assert.match(renderer,/root\.removeEventListener\('click', guideClick, true\)/);
 });
 test('new plugin build replaces a stale renderer instead of reusing its old CSS',()=>{
-  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch33-horizontal-junction'/);
+  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch34-single-drop-line'/);
   assert.match(renderer,/if \(w\.__vHierarchy388\.buildId === BUILD_ID\)/);
   assert.match(renderer,/w\.__vHierarchy388\.stop\(\)/);
   assert.match(renderer,/delete w\.__vHierarchy388/);
@@ -188,35 +189,45 @@ test('drag dotted rail aligns to guide trunk instead of custom prefab icon for b
   assert.equal(expectedPaintedRail(true),55);
   assert.equal(expectedPaintedRail(false),35);
   assert.notEqual(expectedPaintedRail(true),75, 'must not move one indent too far toward icon');
-  assert.match(renderer,/Patch 32 correctly aligns the dotted child rail/);
+  assert.match(renderer,/It starts exactly on the corrected dotted vertical child rail/);
   assert.doesNotMatch(renderer,/translate:40px 0 !important/);
   assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*translate:/);
   assert.match(renderer,/\.drop-box > \.horizontal-line \{\s*translate:var\(--vh-drop-rail-start\) 0 !important/);
+  assert.match(renderer,/background-position:left bottom !important/);
 });
 
 
-// Regression: Creator's 2px native .drop-box border is the FULL-WIDTH line.
-// The tiny .horizontal-line child is just a 1px endpoint marker.
-// The replaced border starts at the dotted vertical rail column, never crosses it.
-test('drop-box horizontal border is trimmed to meet dotted vertical rail in both toggle modes',()=>{
-  assert.match(renderer,/--vh-drop-rail-start:0px/);
-  assert.match(renderer,/--vh-drop-rail-start:20px/);
-  assert.match(renderer,/border-top-color:transparent !important/);
-  assert.match(renderer,/border-bottom-color:transparent !important/);
-  assert.match(renderer,/\.drop-box::before \{\s*content:'';\s*position:absolute;\s*top:-2px;\s*left:calc\(var\(--vh-drop-rail-start\) - 1px\);\s*right:-2px;\s*height:2px/);
-  assert.match(renderer,/background:var\(--color-focus-border\)/);
-  assert.match(renderer,/pointer-events:none/);
+// Regression for screenshot where both a cyan bar at the top and a second cyan
+// bar at the intended drop boundary were visible. The old ::before + native
+// two-sided border combination must never return.
+test('one horizontal rule at the bottom of short and tall native drop boxes',()=>{
+  assert.match(renderer,/background-image:linear-gradient\(90deg,/);
+  assert.match(renderer,/transparent calc\(var\(--vh-drop-rail-start\) \+ 1px\)/);
+  assert.match(renderer,/var\(--color-focus-border\) calc\(var\(--vh-drop-rail-start\) \+ 1px\)/);
+  assert.match(renderer,/background-repeat:no-repeat !important/);
+  assert.match(renderer,/background-origin:border-box !important/);
+  assert.match(renderer,/background-position:left bottom !important/);
+  assert.match(renderer,/background-size:100% 2px !important/);
+  assert.match(renderer,/border-color:transparent !important/);
+  assert.match(renderer,/\.drop-box::before \{\s*content:none !important/);
+  assert.doesNotMatch(renderer,/\.drop-box::before \{[^}]*height:2px/);
+  assert.doesNotMatch(renderer,/\.drop-box::before \{[^}]*background:var\(--color-focus-border\)/);
   assert.match(renderer,/\.drop-box > \.horizontal-line \{\s*translate:var\(--vh-drop-rail-start\) 0 !important/);
-  // Native vertical CSS: 2px left border + child left:-1px => boxX + 1.
-  // Horizontal ::before starts at the same boxX + 1 (+ active column shift).
+  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*transform:translateX/);
+  // Source geometry for native marker: border box starts x34, dotted child
+  // left x35. Only the optional Active column shifts both junctions +20.
   const boxX=34;
   for (const active of [false,true]) {
     const shift=active?20:0;
     const dotX=boxX+1+shift;
-    const horizontalStartX=boxX+1+shift;
-    assert.equal(horizontalStartX,dotX);
+    const horizontalStart=boxX+1+shift;
+    assert.equal(horizontalStart,dotX);
     assert.equal(dotX,active?55:35);
   }
-  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*transform:translateX/);
+});
+test('native Cocos pointer/drop handling and unrelated search marker remain intact',()=>{
+  assert.match(renderer,/\.tree\[data-vh-lock-gutter\]:not\(\[searching\]\) \+ \.drop-box/);
+  assert.doesNotMatch(renderer,/addEventListener\(['"]dragover['"]/);
+  assert.doesNotMatch(renderer,/addEventListener\(['"]mousedown['"],\s*guideDown/);
   assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*pointer-events:auto/);
 });

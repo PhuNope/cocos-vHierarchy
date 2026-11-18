@@ -15,7 +15,7 @@
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch33-horizontal-junction';
+  const BUILD_ID = '0.1.1-patch34-single-drop-line';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -163,31 +163,33 @@
       padding-left:var(--vh-action-gutter-width) !important;
     }
     .tree[data-vh-lock-gutter][data-vh-quick-toggle] { --vh-action-gutter-width:42px; }
-    /* Cocos Creator 3.8.8 draws the LONG horizontal insertion line as the
-       2px top/bottom border of .drop-box, starting at the unshifted native X.
-       Patch 32 correctly aligns the dotted child rail with vHierarchy's trunk,
-       but that border continues 20px past the rail and crosses it.
-       Preserve the native drop-box dimensions and pointer behavior; replace
-       only the drawn horizontal border with a ::before line which BEGINS at
-       exactly the same X as the dotted rail. The box stays native-controlled. */
+    /* One horizontal drop indicator, not two.
+       Creator's .drop-box has a 2px border on ALL sides. When it spans a
+       parent branch, its native top/bottom borders plus a vHierarchy ::before
+       line can produce the two cyan horizontals seen in Patch 33. Draw ONE
+       horizontal line as a bottom-positioned background gradient instead.
+       It starts exactly on the corrected dotted vertical child rail (1px
+       inside the native border plus the optional 20px Active column).
+       This does not resize/move the native drop-box or intercept any pointer
+       events, and its vertical dotted descendant is never clipped. */
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box {
       --vh-drop-rail-start:0px;
-      border-left-color:transparent !important;
-      border-top-color:transparent !important;
-      border-bottom-color:transparent !important;
+      border-color:transparent !important;
+      background-image:linear-gradient(90deg,
+        transparent 0,
+        transparent calc(var(--vh-drop-rail-start) + 1px),
+        var(--color-focus-border) calc(var(--vh-drop-rail-start) + 1px)) !important;
+      background-repeat:no-repeat !important;
+      background-origin:border-box !important;
+      background-position:left bottom !important;
+      background-size:100% 2px !important;
     }
     .content > .tree[data-vh-lock-gutter][data-vh-quick-toggle]:not([searching]) + .drop-box {
       --vh-drop-rail-start:20px;
     }
+    /* Never recreate the old overlay on top of Creator's native indicator. */
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box::before {
-      content:'';
-      position:absolute;
-      top:-2px;
-      left:calc(var(--vh-drop-rail-start) - 1px);
-      right:-2px;
-      height:2px;
-      background:var(--color-focus-border);
-      pointer-events:none;
+      content:none !important;
     }
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .vertical-line {
       translate:0px 0 !important;
@@ -195,9 +197,7 @@
     .content > .tree[data-vh-lock-gutter][data-vh-quick-toggle]:not([searching]) + .drop-box > .vertical-line {
       translate:20px 0 !important;
     }
-    /* Creator's .horizontal-line is a 1px-wide end cap under the dotted rail,
-       not the long insertion bar. Move that tiny cap to the same rail so it
-       does not remain as a detached blue pixel at the original marker X. */
+    /* Creator's 1px end cap follows the same vertical junction. */
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .horizontal-line {
       translate:var(--vh-drop-rail-start) 0 !important;
     }

@@ -15,7 +15,7 @@
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch31-gutter-css';
+  const BUILD_ID = '0.1.1-patch32-branch-rail';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -163,20 +163,21 @@
       padding-left:var(--vh-action-gutter-width) !important;
     }
     .tree[data-vh-lock-gutter][data-vh-quick-toggle] { --vh-action-gutter-width:42px; }
-    /* Cocos computes the native drop rail in the unpadded .content coordinate
-       system, while vHierarchy shifts tree rows by the 22/42px Lock/Active
-       gutter. The remaining 2px is accounted for by Creator's drop-box border.
-       Move ONLY the dotted vertical child in CSS, so this works immediately
-       for both node drags and external prefab/assets drags without racing
-       native dragover events or relying on stale item geometry. */
+    /* The native drop marker starts on a different X than vHierarchy's
+       painted branch trunk. In Creator 3.8.8 the native marker is already
+       aligned with the 22px Lock-only gutter. ONLY the optional 20px Active
+       checkbox column needs compensating. Applying all 22/42px (Patch 31)
+       moved the dotted line ONE 20px indent past the actual guide, next to
+       the node icon. This intentionally does not touch the horizontal bar,
+       native drag-box dimensions, or drag/pointer events. */
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box {
       border-left-color:transparent !important;
     }
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .vertical-line {
-      translate:20px 0 !important;
+      translate:0px 0 !important;
     }
     .content > .tree[data-vh-lock-gutter][data-vh-quick-toggle]:not([searching]) + .drop-box > .vertical-line {
-      translate:40px 0 !important;
+      translate:20px 0 !important;
     }
     /* The marker must render ABOVE our tinted and selected row backgrounds.
        Creator's default z-index:0 sits underneath the table's z-index:1. */

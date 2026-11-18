@@ -143,8 +143,9 @@ test('visual-only native dotted marker aligns with hierarchy 20px Active gutter'
   assert.match(renderer,/\.drop-box > \.horizontal-line \{\s*translate:var\(--vh-drop-rail-shift\) 0 !important/);
   assert.match(renderer,/--vh-drop-rail-shift:0px/);
   assert.match(renderer,/--vh-drop-rail-shift:20px/);
-  assert.match(renderer,/clip-path:inset\(-1000px -1000px -1000px 20px\)/);
-  assert.match(renderer,/border-left-color:transparent !important/);
+  assert.doesNotMatch(renderer,/clip-path:inset\(-1000px -1000px -1000px 20px\)/);
+  assert.doesNotMatch(renderer,/border-left-color:transparent !important/);
+  assert.match(renderer,/\.tree\[hoving\] > \.tree-node > \.drag-item > \.vh-action-gutter \{\s*pointer-events:none !important/);
   assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*transform:translateX/);
   assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*pointer-events:auto/);
   assert.match(renderer,/--vh-action-gutter-width:22px/);
@@ -213,7 +214,7 @@ test('guide shortcuts never cancel mousedown or pointerdown required for native 
 });
 
 test('new plugin build replaces stale renderer and CSS',()=>{
-  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch37-native-drop-preview'/);
+  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch38-drop-box-preserve'/);
   assert.match(renderer,/if \(w\.__vHierarchy388\.buildId === BUILD_ID\)/);
   assert.match(renderer,/w\.__vHierarchy388\.stop\(\)/);
   assert.match(renderer,/delete w\.__vHierarchy388/);

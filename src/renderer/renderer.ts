@@ -15,7 +15,7 @@
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch37-native-drop-preview';
+  const BUILD_ID = '0.1.1-patch38-drop-box-preserve';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -165,19 +165,15 @@
     .tree[data-vh-lock-gutter][data-vh-quick-toggle] { --vh-action-gutter-width:42px; }
     /* Cocos alone owns the parent-vs-sibling drop decision and its marker.
        A rendered .drop-box can be TALL even when Cocos intends a sibling
-       insertion. Never interpret box height, hover position or pointer Y as
-       permission to highlight a parent (Patch 35/36 regression).
-       Preserve the native box/border/size so Creator shows its actual target.
-       vHierarchy only aligns the dashed rail with our left action gutter.
-       The clip trims the extra horizontal overhang without moving/hit-testing
-       the native marker. Neither rule changes any drag, drop or click event. */
+       insertion. Never infer parent mode from its height or hover position.
+       IMPORTANT: do not clip .drop-box or override its border: these are native
+       visual signals, which differ between parent and sibling insertions.
+       Align ONLY the two inner guide lines with the vHierarchy action gutter. */
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box {
       --vh-drop-rail-shift:0px;
-      border-left-color:transparent !important;
     }
     .content > .tree[data-vh-lock-gutter][data-vh-quick-toggle]:not([searching]) + .drop-box {
       --vh-drop-rail-shift:20px;
-      clip-path:inset(-1000px -1000px -1000px 20px);
     }
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .vertical-line,
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .horizontal-line {
@@ -187,6 +183,11 @@
        Creator's default z-index:0 sits underneath the table's z-index:1. */
     .content > .tree[hoving] + .drop-box {
       z-index:2 !important; pointer-events:none !important;
+    }
+    /* The added background gutter is only decorative while native dragging.
+       Let the actual ui-drag-item receive drag pointer hit tests directly. */
+    .tree[hoving] > .tree-node > .drag-item > .vh-action-gutter {
+      pointer-events:none !important;
     }
     .tree[data-vh-lock-gutter] > .tree-node > .drag-item > .vh-action-gutter {
       position:absolute; left:calc(0px - var(--vh-action-gutter-width)); top:0;

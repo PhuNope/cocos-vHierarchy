@@ -1,0 +1,42 @@
+name: Build vHierarchy test ZIP (no release)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'tsconfig.*.json'
+      - '.github/workflows/test-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build and run tests
+        run: npm test
+      - name: Package installable test ZIP
+        run: npm run pack:local
+      - name: Upload test ZIP (not a GitHub release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: vHierarchy-test-${{ github.run_number }}
+          path: vHierarchy-0.1.1-test.zip
+          if-no-files-found: error
+          retention-days: 30

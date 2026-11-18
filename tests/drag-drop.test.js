@@ -194,7 +194,7 @@ test('legacy drop markup is removed when upgrading from Patch 36, not reintroduc
 });
 
 test('native Cocos retains its original parent and sibling drop target',()=>{
-  assert.match(renderer,/No synthetic dotted line|No synthetic dotted/);
+  assert.match(renderer,/Never draw over the native horizontal bar/);
   assert.match(renderer,/const markerRect=marker!\.getBoundingClientRect\(\)/);
   assert.match(renderer,/p\.level===best\.level\?DROP_DASH_IMAGE:p\.image/);
   assert.doesNotMatch(renderer,/const nativeParentArea/);
@@ -261,7 +261,8 @@ test('target branch changes existing solid rail into dots and restores it on dra
     guide:{index:0,result:{nodes:[{valid:true,depth:2,offset:0}],layout:{base:19,step:20}}}};
   box.previousElementSibling=tree;
   box.querySelector=()=>({getBoundingClientRect:()=>({top:100,bottom:120,left:53,height:20})});
-  const env={state:{options:{enabled:true,hierarchyLines:true}},views:[item],nativeDropPaintedRows:new Map()};
+  const env={state:{options:{enabled:true,hierarchyLines:true}},views:[item],nativeDropPaintedRows:new Map(),
+    DROP_DASH_IMAGE:'repeating-linear-gradient(to bottom, blue 0px, blue 2px, transparent 2px, transparent 5px)'};
   vm.runInNewContext(renderer.slice(start,end)+'\nthis.sync=syncNativeDropPaint;',env);
   env.sync(box);
   assert.equal(tree.a.get('data-vh-dotted-native-replaced'),'true');

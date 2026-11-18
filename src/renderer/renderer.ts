@@ -16,7 +16,7 @@
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch44-guide-thickness-setting';
+  const BUILD_ID = '0.1.1-patch45-scene-end-branch-preview';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -960,6 +960,71 @@
       row.removeAttribute('data-vh-drop-dashed-elbow');
     return dashed || dashedElbow;
   }
+  /** Finish a preview after replacing old painted rows, without touching Cocos'
+   * native insertion box or the actual drag target. */
+  function applyNativeDropPaths(box:HTMLElement,tree:HTMLElement,next:Set<HTMLElement>):void {
+    for(const row of nativeDropPaintedRows.get(box)||[])if(!next.has(row)){
+      row.removeAttribute('data-vh-drop-dashed');
+      row.removeAttribute('data-vh-drop-dashed-elbow');
+      for(const prop of DROP_GUIDE_PROPS)row.style.removeProperty(prop);
+      const item=views.find(v=>v.row===row);
+      if(!item?.guidePaint?.length)row.removeAttribute('data-vh-guide');
+    }
+    if(next.size){
+      nativeDropPaintedRows.set(box,next);
+      if(!tree.hasAttribute('data-vh-dotted-native-replaced'))
+        tree.setAttribute('data-vh-dotted-native-replaced','true');
+    }else clearNativeDropPaint(box);
+    if(box.hasAttribute('data-vh-thin-insert'))box.removeAttribute('data-vh-thin-insert');
+    if(box.style.getPropertyValue('--vh-insert-rail-x'))box.style.removeProperty('--vh-insert-rail-x');
+  }
+  /** The very LAST row can be a descendant even when the native 2px insertion
+   * bar is at SCENE level. A hovered last-child is not necessarily the drop
+   * parent! When Cocos' actual bar sits in the scene/root column, paint only
+   * that column through the final row. Do not turn the last child's own elbow
+   * or its deeper branch into dots.
+   * Never change drop-box geometry, mouse handling or insertion intent. */
+  function paintSceneEndDrop(box:HTMLElement,tree:HTMLElement,group:Item[],
+    target:Item,result:VHierarchyGuides.Result,nativeRect:DOMRect):boolean {
+    const index=target.guide?.index ?? -1,entry=result.nodes[index];
+    if(index!==group.length-1 || !entry?.valid || entry.depth<=1 ||
+      nativeRect.height<=0 || nativeRect.height>5) return false;
+    const lastRect=target.row.getBoundingClientRect();
+    if(nativeRect.top<lastRect.bottom-4 || nativeRect.top>lastRect.bottom+22)return false;
+    let root=index;
+    while(result.nodes[root]?.parent!==null && result.nodes[root]?.parent!==undefined)
+      root=result.nodes[root].parent!;
+    const scene=result.nodes[root];
+    if(!scene?.valid || scene.depth!==0)return false;
+    const sceneLevel=scene.depth+1;
+    const treeLeft=tree.getBoundingClientRect().left;
+    const marker=box.querySelector(':scope > .vertical-line') as HTMLElement|null;
+    const markerX=marker?.getBoundingClientRect().left;
+    const entryX=target.drag.getBoundingClientRect().left+entry.offset+result.layout.base;
+    const sceneX=entryX+(sceneLevel-.5)*result.layout.step;
+    const childX=entryX+(entry.depth-.5)*result.layout.step;
+    // Either the native box begins before the scene-tree rows (Cocos 3.8.8)
+    // or its vertical marker lies measurably closer to the scene branch.
+    const sceneColumn=nativeRect.left<=treeLeft+1 ||
+      (markerX!==undefined && Number.isFinite(markerX) &&
+        Math.abs(markerX-sceneX)+8<Math.abs(markerX-childX));
+    if(!sceneColumn)return false;
+    clearNodeOutline(box);
+    const endY=nativeRect.top;
+    const next=new Set<HTMLElement>();
+    for(let i=root;i<=index;i++){
+      const row=group[i],node=result.nodes[i];
+      if(!row?.guide || !node?.valid || row.row.parentElement!==tree)continue;
+      const rect=row.drag.getBoundingClientRect();
+      if(rect.top>=endY)break;
+      const from=i===root?(rect.top+rect.bottom)/2:rect.top;
+      const to=Math.min(endY,rect.bottom);
+      if(to>from+.5 && drawDottedGuideRow(row,[{level:sceneLevel,startY:from,endY:to}],false))
+        next.add(row.row);
+    }
+    applyNativeDropPaths(box,tree,next);
+    return true;
+  }
   /** Visual only: native dragover identifies target row; no change to Cocos
    * hitbox, parent/sibling decision, native insertion border or event flow. */
   function syncNativeDropPaint(box: HTMLElement): void {
@@ -984,6 +1049,9 @@
     const centerHover=Math.abs(positionY-center)<=Math.min(6,targetRect.height*.27);
     const inserting=!centerHover;
     const nativeRect=box.getBoundingClientRect();
+    // At the end of the scene, the native insertion indicator takes priority
+    // over the last CHILD row that happens to receive the hover event.
+    if(paintSceneEndDrop(box,tree!,group,target,result,nativeRect))return;
     if(centerHover)syncNodeOutline(box,target,nativeRect,targetRect);
     else clearNodeOutline(box);
     const before=inserting && positionY<center;
@@ -1040,21 +1108,7 @@
       // The elbow belongs only to real child edges on the active path.
       if(drawDottedGuideRow(item,paths.get(i)||[],incoming))next.add(item.row);
     }
-    for(const row of nativeDropPaintedRows.get(box)||[])if(!next.has(row)){
-      row.removeAttribute('data-vh-drop-dashed');
-      row.removeAttribute('data-vh-drop-dashed-elbow');
-      for(const prop of DROP_GUIDE_PROPS)row.style.removeProperty(prop);
-      const item=views.find(v=>v.row===row);
-      if(!item?.guidePaint?.length)row.removeAttribute('data-vh-guide');
-    }
-    if(next.size){
-      nativeDropPaintedRows.set(box,next);
-      if(!tree!.hasAttribute('data-vh-dotted-native-replaced'))
-        tree!.setAttribute('data-vh-dotted-native-replaced','true');
-    }else clearNativeDropPaint(box);
-    // Remove any temporary artifacts left by older test patches.
-    if(box.hasAttribute('data-vh-thin-insert'))box.removeAttribute('data-vh-thin-insert');
-    if(box.style.getPropertyValue('--vh-insert-rail-x'))box.style.removeProperty('--vh-insert-rail-x');
+    applyNativeDropPaths(box,tree!,next);
   }
   function observeNativeDropPaint(tree: HTMLElement): void {
     const box = tree.nextElementSibling as HTMLElement | null;

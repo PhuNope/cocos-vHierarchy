@@ -229,7 +229,7 @@ test('guide shortcuts never cancel mousedown or pointerdown required for native 
 });
 
 test('new plugin build replaces stale renderer and CSS',()=>{
-  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch44-guide-thickness-setting'/);
+  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch45-scene-end-branch-preview'/);
   assert.match(renderer,/if \(w\.__vHierarchy388\.buildId === BUILD_ID\)/);
   assert.match(renderer,/w\.__vHierarchy388\.stop\(\)/);
   assert.match(renderer,/delete w\.__vHierarchy388/);
@@ -394,5 +394,103 @@ test('thicker guide setting flows into solid guides, drag dotted segments and no
   assert.match(renderer,/--vh-guide-thickness': getGuideThickness\(\) \+ 'px'/);
   assert.match(renderer,/border:var\(--vh-guide-thickness,1px\) solid var\(--color-focus-border,#47bdf1\)/);
   assert.doesNotMatch(renderer,/\.drop-box > \.horizontal-line \{\s*translate:/);
+  assert.doesNotMatch(renderer,/addEventListener\('drop'/);
+});
+
+
+test('native scene-end insertion does not dash the last child branch or its elbow',()=>{
+  const start=renderer.indexOf('const DROP_DASH_IMAGE =');
+  const end=renderer.indexOf('function observeNativeDropPaint(tree) {',start);
+  assert.ok(start>0&&end>start);
+  function el(top,bottom,left=53,right=465){
+    const a=new Map(),s=new Map();
+    return {
+      a,s,hasAttribute:k=>a.has(k),getAttribute:k=>a.get(k)||null,
+      setAttribute:(k,v)=>a.set(k,v),removeAttribute:k=>a.delete(k),
+      matches:()=>false,querySelector:()=>null,
+      style:{getPropertyValue:k=>s.get(k)||'',setProperty:(k,v)=>s.set(k,v),removeProperty:k=>s.delete(k)},
+      getBoundingClientRect:()=>({top,bottom,left,right,height:bottom-top,width:right-left}),
+    };
+  }
+  const tree=el(70,400);
+  tree.classList={contains:k=>k==='tree'};
+  tree.setAttribute('hoving','');
+  const rows=[el(100,120),el(120,140),el(140,160)];
+  for(const row of rows){row.parentElement=tree;row.setAttribute('data-vh-elbow','true');}
+  const nodes=[
+    {depth:0,parent:null,valid:true,indent:20,offset:0},
+    {depth:1,parent:0,valid:true,indent:40,offset:0},
+    {depth:2,parent:1,valid:true,indent:60,offset:0},
+  ];
+  const result={layout:{base:12,step:20},nodes};
+  const items=rows.map((row,index)=>({
+    row,drag:el(100+index*20,120+index*20),
+    guidePaint:index ? [{level:index,image:'linear-gradient(gray,gray)',position:'42px top',size:'1px 100%'}]:[],
+    guide:{group:null,index,result},
+  }));
+  for(const item of items)item.guide.group=items;
+  let boxRect={top:159,bottom:161,left:42,right:465,height:2,width:423};
+  let markerX=73;
+  const box=el(159,161,42);
+  box.getBoundingClientRect=()=>boxRect;
+  box.querySelector=()=>({getBoundingClientRect:()=>({left:markerX,top:159,bottom:169,height:10})});
+  box.previousElementSibling=tree;
+  const nativeDropHover=new WeakMap([[tree,{row:rows[2],y:159}]]);
+  const env={state:{options:{enabled:true,hierarchyLines:true}},
+    views:items,nativeDropHover,nativeDropPaintedRows:new Map(),
+    getGuideThickness:()=>1,
+    VHierarchyGuides:{selectedGuides:()=>[
+      {rails:[],elbow:false},{rails:[1],elbow:true},{rails:[2],elbow:true}
+    ]}};
+  vm.runInNewContext(renderer.slice(start,end)+'\nthis.sync=syncNativeDropPaint;',env);
+
+  // Cocos' thin native bar starts left of the tree: a SCENE sibling insertion,
+  // even though dragover last targeted its deeply nested Node+ child.
+  env.sync(box);
+  for(const item of items){
+    assert.equal(item.row.a.get('data-vh-drop-dashed'),'true');
+    assert.equal(item.row.a.has('data-vh-drop-dashed-elbow'),false);
+    assert.match(item.row.s.get('--vh-guide-drop-images'),/repeating-linear-gradient/);
+  }
+  assert.equal(box.a.has('data-vh-node-outline'),false);
+  assert.match(rows[2].s.get('--vh-guide-drop-images'),/linear-gradient\(gray,gray\)/,
+    'solid child line is kept and only scene branch is dotted');
+  assert.match(rows[2].s.get('--vh-guide-drop-positions'),/^22px /,
+    'dotted segment remains in scene/root column');
+  assert.equal(rows[2].s.get('--vh-guide-drop-sizes').includes('19px'),true,
+    'scene dots end at native horizontal insertion bar, not below it');
+
+  // A thin insertion at the last CHILD's own column must still work. Do not
+  // globally disable child previews merely because this is the final row.
+  boxRect={top:159,bottom:161,left:74,right:465,height:2,width:391};
+  markerX=95;
+  env.sync(box);
+  assert.equal(rows[2].a.get('data-vh-drop-dashed-elbow'),'true');
+  assert.match(rows[2].s.get('--vh-guide-drop-positions'),/^42px /);
+  assert.equal(box.a.has('data-vh-node-outline'),false);
+
+  // Even when the pointer is at the last child's center, the explicit native
+  // scene-end insertion indicator takes precedence over the cached hover.
+  nativeDropHover.set(tree,{row:rows[2],y:150});
+  boxRect={top:159,bottom:161,left:42,right:465,height:2,width:423};
+  markerX=73;
+  env.sync(box);
+  assert.equal(rows[2].a.has('data-vh-drop-dashed-elbow'),false);
+  assert.equal(box.a.has('data-vh-node-outline'),false);
+
+  tree.removeAttribute('hoving');
+  env.sync(box);
+  for(const row of rows)assert.equal(row.a.has('data-vh-drop-dashed'),false);
+  assert.equal(tree.a.has('data-vh-dotted-native-replaced'),false);
+});
+
+test('only the final native root-column insertion overrides nested drag path',()=>{
+  assert.match(renderer,/function paintSceneEndDrop\(box,/);
+  assert.match(renderer,/index !== group\.length - 1/);
+  assert.match(renderer,/nativeRect\.height > 5/);
+  assert.match(renderer,/scene\.depth !== 0/);
+  assert.match(renderer,/nativeRect\.left <= treeLeft \+ 1/);
+  assert.match(renderer,/paintSceneEndDrop\(box, tree, group, target, result, nativeRect\)/);
+  assert.match(renderer,/applyNativeDropPaths\(box, tree, next\)/);
   assert.doesNotMatch(renderer,/addEventListener\('drop'/);
 });

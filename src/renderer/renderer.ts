@@ -15,7 +15,7 @@
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch38-drop-box-preserve';
+  const BUILD_ID = '0.1.1-patch39-native-rail-junction';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -163,12 +163,8 @@
       padding-left:var(--vh-action-gutter-width) !important;
     }
     .tree[data-vh-lock-gutter][data-vh-quick-toggle] { --vh-action-gutter-width:42px; }
-    /* Cocos alone owns the parent-vs-sibling drop decision and its marker.
-       A rendered .drop-box can be TALL even when Cocos intends a sibling
-       insertion. Never infer parent mode from its height or hover position.
-       IMPORTANT: do not clip .drop-box or override its border: these are native
-       visual signals, which differ between parent and sibling insertions.
-       Align ONLY the two inner guide lines with the vHierarchy action gutter. */
+    /* Native Cocos alone determines parent versus sibling insertion and owns
+       .drop-box geometry. Align only the inner dashed rail with our gutter. */
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box {
       --vh-drop-rail-shift:0px;
     }
@@ -179,13 +175,33 @@
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .horizontal-line {
       translate:var(--vh-drop-rail-shift) 0 !important;
     }
-    /* The marker must render ABOVE our tinted and selected row backgrounds.
-       Creator's default z-index:0 sits underneath the table's z-index:1. */
+    /* Restore the native dashed vertical in parent preview as well as reorder. */
+    .content > .tree[data-vh-lock-gutter][hoving]:not([searching]) + .drop-box > .vertical-line {
+      display:block !important; visibility:visible !important;
+      opacity:1 !important; z-index:3 !important; min-height:10px;
+      pointer-events:none !important;
+    }
+    /* A clearly thin native insertion bar is drawn from the ACTUAL dotted
+       line X to the right. Never clip a tall native drop-box: Cocos may use
+       a tall box for a parent OR a sibling, so parent highlighting is kept. */
+    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box[data-vh-thin-insert='true'] {
+      border-color:transparent !important;
+      background-image:linear-gradient(to right,
+        transparent 0,transparent var(--vh-insert-rail-x),
+        var(--color-focus-border) var(--vh-insert-rail-x)) !important;
+      background-origin:border-box !important;
+      background-position:left top !important;
+      background-size:100% 2px !important;
+      background-repeat:no-repeat !important;
+    }
+    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box[data-vh-thin-insert='true'] > .horizontal-line {
+      visibility:hidden !important;
+    }
+    /* Native preview stays above tinted and selected row backgrounds. */
     .content > .tree[hoving] + .drop-box {
       z-index:2 !important; pointer-events:none !important;
     }
-    /* The added background gutter is only decorative while native dragging.
-       Let the actual ui-drag-item receive drag pointer hit tests directly. */
+    /* Gutter is decorative while dragging: do not intercept row hit testing. */
     .tree[hoving] > .tree-node > .drag-item > .vh-action-gutter {
       pointer-events:none !important;
     }
@@ -374,6 +390,7 @@
   let timer: ReturnType<typeof setInterval> | null = null;
   let observer: MutationObserver | null = null;
   const treeObservers = new Map<HTMLElement, MutationObserver>();
+  const nativeDropPaintWatchers = new Map<HTMLElement, MutationObserver>();
   const layerLookup = new VHierarchyLayers.Lookup(uuid => req('scene','query-node', uuid), () => schedule());
   const prefabPromotions = new Set<string>();
   const priorRows = new WeakMap<HTMLElement, {uuid: string; path: string; appearance: Appearance}>();
@@ -795,6 +812,50 @@
   }
   /** Watch native Vue tree changes so guides render in the expand frame, not at
    * the 1.4s resilience polling interval. Ignore changes from our own controls. */
+  /** Read native painted geometry only; never create parent/drop intent. */
+  function syncNativeDropPaint(box: HTMLElement): void {
+    const tree = box.previousElementSibling as HTMLElement | null;
+    const marker = box.querySelector(':scope > .vertical-line') as HTMLElement | null;
+    const active = !!(state.options.enabled && tree?.classList.contains('tree') &&
+      tree.hasAttribute('hoving') && !tree.hasAttribute('searching') && marker);
+    if (!active) {
+      box.removeAttribute('data-vh-thin-insert');
+      box.style.removeProperty('--vh-insert-rail-x');
+      return;
+    }
+    const area = box.getBoundingClientRect();
+    const rail = marker!.getBoundingClientRect();
+    // getBoundingClientRect includes BOTH Cocos' indentation and our translate.
+    const x = Math.round(rail.left - area.left);
+    const thin = area.height > 0 && area.height <= 5;
+    const valid = Number.isFinite(x) && x > 0 && x < area.width - 2 && rail.height > 0;
+    if (thin && valid) {
+      const pos = x + 'px';
+      if (box.style.getPropertyValue('--vh-insert-rail-x') !== pos)
+        box.style.setProperty('--vh-insert-rail-x', pos);
+      if (box.getAttribute('data-vh-thin-insert') !== 'true')
+        box.setAttribute('data-vh-thin-insert', 'true');
+    } else {
+      box.removeAttribute('data-vh-thin-insert');
+      box.style.removeProperty('--vh-insert-rail-x');
+    }
+  }
+  function observeNativeDropPaint(tree: HTMLElement): void {
+    const box = tree.nextElementSibling as HTMLElement | null;
+    if (!box?.classList.contains('drop-box')) return;
+    if (!nativeDropPaintWatchers.has(box)) {
+      // Passive native style watcher only; no pointer, dragover or drop handlers.
+      const watcher = new MutationObserver(() => syncNativeDropPaint(box));
+      watcher.observe(box, {attributes:true,attributeFilter:['style'],childList:true,subtree:true});
+      nativeDropPaintWatchers.set(box, watcher);
+    }
+    syncNativeDropPaint(box);
+  }
+  function pruneNativeDropPaintWatchers(): void {
+    for (const [box, watcher] of nativeDropPaintWatchers) if (!box.isConnected) {
+      watcher.disconnect(); nativeDropPaintWatchers.delete(box);
+    }
+  }
   function observeTree(tree: HTMLElement): void {
     if (treeObservers.has(tree)) return;
     const watcher = new MutationObserver(records => {
@@ -852,6 +913,7 @@
           clearLegacyDropPreview(tree);
           changeAttr(tree, 'data-vh-lock-gutter', state.options.enabled ? 'true' : undefined);
           changeAttr(tree, 'data-vh-quick-toggle', state.options.enabled && state.options.activationToggle ? 'true' : undefined);
+          observeNativeDropPaint(tree);
           rootHost = tree.getRootNode() as Document | ShadowRoot;
           renderToolbar(tree);
           const rows = [...tree.querySelectorAll(':scope > .tree-node')] as HTMLElement[];
@@ -912,7 +974,7 @@
         }
       }
     } catch (e) { logError('scan',e); }
-    finally { pruneTreeObservers(); }
+    finally { pruneTreeObservers(); pruneNativeDropPaintWatchers(); }
   }
   function schedule(): void { if (!stopped && !queued) { queued=true; requestAnimationFrame(scan); } }
   function listen(root: Document | ShadowRoot): void {
@@ -1346,6 +1408,12 @@
     stopped=true; appearanceWrites.clear(); prefabPromotions.clear(); googleFontLink?.remove();googleFontLink=null; layerLookup.dispose(); if(timer)clearInterval(timer);observer?.disconnect();closePopup();
     for (const watcher of treeObservers.values()) watcher.disconnect();
     treeObservers.clear();
+    for (const [box, watcher] of nativeDropPaintWatchers) {
+      watcher.disconnect();
+      box.removeAttribute('data-vh-thin-insert');
+      box.style.removeProperty('--vh-insert-rail-x');
+    }
+    nativeDropPaintWatchers.clear();
     for(const release of listeners) release(); listeners.length=0;
     for(const panel of panels())for(const r of roots(panel)){
       for(const tree of (r as Element).querySelectorAll?.('.tree[data-vh-lock-gutter],.tree[data-vh-quick-toggle]')||[]) {

@@ -354,7 +354,10 @@ test('center-node outline is SOLID from nested branch to far right, excluding Lo
     guide:{index:3,result:{nodes:[null,null,null,{depth:3,offset:0,valid:true}],
       layout:{base:19,step:20}}},
   };
-  const env={};
+  const env={NODE_OUTLINE_PROPS:[
+    '--vh-node-outline-left','--vh-node-outline-top',
+    '--vh-node-outline-width','--vh-node-outline-height',
+  ]};
   vm.runInNewContext(renderer.slice(start,end)+'\nthis.sync=syncNodeOutline;this.clear=clearNodeOutline;',env);
   env.sync(box,target,
     {left:0,top:95,right:463,bottom:215},

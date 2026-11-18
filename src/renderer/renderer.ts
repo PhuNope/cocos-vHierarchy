@@ -819,8 +819,10 @@
     const active = !!(state.options.enabled && tree?.classList.contains('tree') &&
       tree.hasAttribute('hoving') && !tree.hasAttribute('searching') && marker);
     if (!active) {
-      box.removeAttribute('data-vh-thin-insert');
-      box.style.removeProperty('--vh-insert-rail-x');
+      if (box.getAttribute('data-vh-thin-insert'))
+        box.removeAttribute('data-vh-thin-insert');
+      if (box.style.getPropertyValue('--vh-insert-rail-x'))
+        box.style.removeProperty('--vh-insert-rail-x');
       return;
     }
     const area = box.getBoundingClientRect();
@@ -836,8 +838,10 @@
       if (box.getAttribute('data-vh-thin-insert') !== 'true')
         box.setAttribute('data-vh-thin-insert', 'true');
     } else {
-      box.removeAttribute('data-vh-thin-insert');
-      box.style.removeProperty('--vh-insert-rail-x');
+      if (box.getAttribute('data-vh-thin-insert'))
+        box.removeAttribute('data-vh-thin-insert');
+      if (box.style.getPropertyValue('--vh-insert-rail-x'))
+        box.style.removeProperty('--vh-insert-rail-x');
     }
   }
   function observeNativeDropPaint(tree: HTMLElement): void {
@@ -1410,8 +1414,10 @@
     treeObservers.clear();
     for (const [box, watcher] of nativeDropPaintWatchers) {
       watcher.disconnect();
-      box.removeAttribute('data-vh-thin-insert');
-      box.style.removeProperty('--vh-insert-rail-x');
+      if (box.getAttribute('data-vh-thin-insert'))
+        box.removeAttribute('data-vh-thin-insert');
+      if (box.style.getPropertyValue('--vh-insert-rail-x'))
+        box.style.removeProperty('--vh-insert-rail-x');
     }
     nativeDropPaintWatchers.clear();
     for(const release of listeners) release(); listeners.length=0;

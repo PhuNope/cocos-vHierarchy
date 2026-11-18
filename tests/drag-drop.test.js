@@ -193,12 +193,15 @@ test('legacy drop markup is removed when upgrading from Patch 36, not reintroduc
   assert.doesNotMatch(renderer,/setAttribute\('data-vh-drop-mode'/);
 });
 
-test('native sibling-marker style is not modified by vHierarchy drop mode or reparent geometry',()=>{
-  assert.match(renderer,/Cocos alone owns the parent-vs-sibling drop decision/);
-  assert.match(renderer,/A rendered \.drop-box can be TALL even when Cocos intends a sibling/);
+test('native Cocos determines drop intent; only clearly thin insertion preview changes paint',()=>{
+  assert.match(renderer,/Native Cocos alone determines parent versus sibling insertion/);
+  assert.match(renderer,/const thin = area\.height > 0 && area\.height <= 5/);
+  assert.match(renderer,/const x = Math\.round\(rail\.left - area\.left\)/);
+  assert.match(renderer,/const valid = Number\.isFinite\(x\)/);
   assert.doesNotMatch(renderer,/const nativeParentArea/);
   assert.doesNotMatch(renderer,/dropMode\(pointer/);
-  assert.doesNotMatch(renderer,/getBoundingClientRect\(\)\.height.*drop/i);
+  assert.doesNotMatch(renderer,/setAttribute\('data-vh-drop-mode'/);
+  assert.doesNotMatch(renderer,/addEventListener\(['"]dragover/);
 });
 
 test('selected normal guide highlight and native Prefab text are unchanged',()=>{

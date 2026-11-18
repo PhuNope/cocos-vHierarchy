@@ -158,6 +158,14 @@
        places them. The individual translate property survives
        Cocos' inline transform styles. Creator shows the box only for [hoving],
        so no extra [hoving] dependency is needed on the alignment itself. */
+    /* Creator 3.8.8 puts a 2px SOLID border on .drop-box itself in addition
+       to the dashed .vertical-line child. Prior fixes moved only the child,
+       leaving the solid left border visibly stranded one indent to the left.
+       Hide that duplicate edge while retaining the entire native box geometry,
+       top/bottom borders, horizontal indicator, and mouse hit testing. */
+    .content > .tree[data-vh-lock-gutter][hoving]:not([searching]) + .drop-box {
+      border-left-color:transparent !important;
+    }
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .vertical-line {
       translate:var(--vh-drop-vertical-shift,0px) 0 !important;
     }
@@ -763,7 +771,7 @@
   }
   /** The dashed native .drop-box vertical-line is NOT part of our guide
    * pseudo-elements. After Cocos computes each dragover position, align its
-   * vertical rail to the elbow on the row immediately below the insertion line.
+   * vertical rail to the same visible child-branch line used by vHierarchy.
    * Measure real DOM positions; use no hardcoded 20px/22px correction. */
   const treeGuideRows = new WeakMap<HTMLElement, Item[]>();
   const dropListeners = new Map<HTMLElement, () => void>();
@@ -821,9 +829,10 @@
     const rect = best.drag.getBoundingClientRect();
     const trunkLevel = VHierarchyGuides.dropTrunkLevel(result.nodes,index);
     if (trunkLevel === null) { reset(); return; }
-    // Crucial: pick the actual PAINTED parent-trunk column, never a depth
-    // inferred from the already-wrong native dotted line. Example from the
-    // reported screenshot: native x=76 (beside icon), parent guide x=56.
+    // Crucial: pick the actual PAINTED child-branch column from the
+    // target row, never a depth inferred from the already-wrong native dotted
+    // line. This keeps the dotted rail directly on top of vHierarchy's own
+    // visible vertical guide instead of leaving it one indent too far left.
     const guideX = rect.left + node.offset + result.layout.base + (trunkLevel - .5) * step;
     const vertical = hint.querySelector(':scope > .vertical-line') as HTMLElement | null;
     if (!vertical) { reset(); return; }
@@ -1031,11 +1040,8 @@
         !parent.drag.querySelector(':scope > .arrow')) return null;
       return parent;
     };
-    const guideDown = (e: Event): void => {
-      if (!(e instanceof MouseEvent) || !guideParentAt(e)) return;
-      // Block native drag/select handling on the small (4px) line hit area.
-      e.preventDefault(); e.stopImmediatePropagation();
-    };
+    // Do not cancel mousedown on guides. Creator needs it to initiate normal
+    // drag/drop, click, and input focus; the guide shortcut remains click-only.
     const guideClick = (e: Event): void => {
       if (!(e instanceof MouseEvent)) return;
       const parent = guideParentAt(e);
@@ -1070,12 +1076,11 @@
         if(lastHovered.uuid){ k.preventDefault(); k.stopPropagation();editor()?.Selection?.select?.('node',lastHovered.uuid); }
       }
     };
-    root.addEventListener('mousedown', guideDown, true);
     root.addEventListener('click', guideClick, true);
     root.addEventListener('mouseover', over, true);
     root.addEventListener('contextmenu', menu, true);
     root.addEventListener('keydown', keydown, true);
-    listeners.push(() => { root.removeEventListener('mousedown', guideDown, true); root.removeEventListener('click', guideClick, true); root.removeEventListener('mouseover', over, true); root.removeEventListener('contextmenu', menu, true); root.removeEventListener('keydown', keydown, true); });
+    listeners.push(() => { root.removeEventListener('click', guideClick, true); root.removeEventListener('mouseover', over, true); root.removeEventListener('contextmenu', menu, true); root.removeEventListener('keydown', keydown, true); });
   }
   function collapseAll(except?: Item): void {
     const keep = new Set<string>();

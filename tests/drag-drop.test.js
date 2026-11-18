@@ -210,14 +210,30 @@ test('native x76 dotted rail moves to parent trunk x56 and preserves horizontal 
   const env={state:{options:{enabled:true,hierarchyLines:true}},treeGuideRows,VHierarchyGuides:guides};
   vm.runInNewContext(renderer.slice(start,end)+'\nthis.alignDropGuide=alignDropGuide;',env);
   env.alignDropGuide(tree);
-  assert.equal(style.getPropertyValue('--vh-drop-vertical-shift'),'-20px');
-  assert.equal(vertical.getBoundingClientRect().left+.5,56);
+  assert.equal(style.getPropertyValue('--vh-drop-vertical-shift'),'0px');
+  assert.equal(vertical.getBoundingClientRect().left+.5,76);
   assert.equal(sets,1);
   assert.equal(horizontal.style.left,'0px');
   assert.equal(horizontal.style.top,'0px');
   env.alignDropGuide(tree);
-  assert.equal(sets,1,'repeated events must converge, not accumulate another -20px');
+  assert.equal(sets,1,'repeated events must converge, not accumulate another correction');
   tree.hasAttribute=v=>v==='data-vh-lock-gutter';
   env.alignDropGuide(tree);
   assert.equal(style.getPropertyValue('--vh-drop-vertical-shift'),'','remove correction when drag ends');
+});
+
+test('native drop-box solid left border is suppressed only while the corrected dotted rail is visible',()=>{
+  // Creator 3.8.8 uses a 2px border on .drop-box AND a separate dashed vertical child.
+  // Leaving the former visible produces the reported cyan line one indent outside.
+  assert.match(renderer,/\.tree\[data-vh-lock-gutter\]\[hoving\]:not\(\[searching\]\) \+ \.drop-box \{\s*border-left-color:transparent !important/);
+  assert.match(renderer,/\.drop-box > \.vertical-line \{\s*translate:var\(--vh-drop-vertical-shift,0px\) 0 !important/);
+  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*border-left-width:0/);
+  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*display:none/);
+  assert.match(renderer,/\.content > \.tree\[hoving\] \+ \.drop-box \{\s*z-index:2 !important; pointer-events:none !important/);
+});
+test('guide shortcuts never cancel mousedown or pointerdown required for native drag and HUD clicks',()=>{
+  assert.doesNotMatch(renderer,/addEventListener\(['"]mousedown['"],\s*guideDown/);
+  assert.doesNotMatch(renderer,/addEventListener\(['"]pointerdown['"],\s*guideDown/);
+  assert.match(renderer,/root\.addEventListener\('click', guideClick, true\)/);
+  assert.match(renderer,/root\.removeEventListener\('click', guideClick, true\)/);
 });

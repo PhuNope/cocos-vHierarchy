@@ -178,20 +178,14 @@ namespace VHierarchyGuides {
   }
 
   /** Identify the vertical guide that belongs to the intended insertion branch.
-   * Cocos draws its dotted rail beside the target icon (at child indentation).
-   * In our hierarchy visualization, the connecting trunk is the visible
-   * parent's elbow, one depth level to the LEFT. Snapping back to the nearest
-   * level calculated from the *dotted line itself* always keeps the old error.
-   * This returns a level, not a pixel offset, so nested prefabs and non-20px
-   * indentation use the same source of truth as our painted guides. */
+   * The dotted native drop rail should coincide with the SAME visible vertical
+   * hierarchy rail used by the target child row / child branch, not with the
+   * parent's elbow one indent earlier. Returning the child's branch level keeps
+   * the drop rail on top of the actual vHierarchy line when inserting new
+   * children, including prefab drags and first-child insertion. */
   export function dropTrunkLevel(nodes: readonly Node[], targetIndex: number): number | null {
     const node = nodes[targetIndex];
     if (!node?.valid || node.depth < 1) return null;
-    if (node.parent !== null) {
-      const parent = nodes[node.parent];
-      if (parent?.valid && parent.depth >= 1 && parent.depth === node.depth - 1)
-        return parent.depth;
-    }
     return node.depth;
   }
 

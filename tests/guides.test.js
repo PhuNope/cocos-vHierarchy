@@ -144,12 +144,12 @@ test('large hierarchy selection uses bounded per-depth traversal',()=>{
 });
 
 
-test('drop trunk targets actual parent rail, not the dotted line beside the icon',()=>{
+test('drop trunk targets the visible child-branch rail used by vHierarchy',()=>{
   const {nodes}=guides.calculate([row(0),row(1),row(2),row(3),row(2),row(1)]);
   assert.equal(guides.dropTrunkLevel(nodes,1),1); // scene child uses own guide
-  assert.equal(guides.dropTrunkLevel(nodes,2),1); // child of Node => Node trunk
-  assert.equal(guides.dropTrunkLevel(nodes,3),2); // nested prefab => grandparent trunk
-  assert.equal(guides.dropTrunkLevel(nodes,4),1);
+  assert.equal(guides.dropTrunkLevel(nodes,2),2); // child insertion aligns to child branch, not parent elbow
+  assert.equal(guides.dropTrunkLevel(nodes,3),3); // nested prefab keeps its own visible branch column
+  assert.equal(guides.dropTrunkLevel(nodes,4),2); // sibling under the same parent keeps the same branch rail
   assert.equal(guides.dropTrunkLevel(nodes,0),null);
   assert.equal(guides.dropTrunkLevel(nodes,999),null);
 });

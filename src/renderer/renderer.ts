@@ -12,11 +12,21 @@
   interface State { options: Opts; appearances: Record<string, Appearance>; prefabAppearances: Record<string, Appearance>; bookmarks: Bookmark[]; customIcons: CustomIcon[]; }
   interface TreeDump { uuid?: string; name?: string; depth?: number; parent?: string; active?: boolean; locked?: boolean; readonly?: boolean; isScene?: boolean; components?: Array<{ type?: string; extends?: string[] }>; prefab?: { state?: number; assetUuid?: string; isAddedChild?: boolean }; level?: string; path?: string; isPrefabRoot?: boolean; layer?: unknown; }
   interface Item { guide?: { group: Item[]; index: number; result: VHierarchyGuides.Result }; prefabKey?: string | null; ancestorIds?: string[]; row: HTMLElement; drag: HTMLElement; node: TreeDump | null; uuid: string; name: string; nameEl: HTMLElement | null; depth: number; padding: number; margin: number; anchor: number; searching: boolean; }
-  interface Hook { refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
+  interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
+  const BUILD_ID = '0.1.1-patch31-gutter-css';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
-  if (w.__vHierarchy388) { w.__vHierarchy388.refresh(); return { status: 'running', reused: true }; }
+  if (w.__vHierarchy388) {
+    if (w.__vHierarchy388.buildId === BUILD_ID) {
+      w.__vHierarchy388.refresh(); return { status:'running', reused:true, build:BUILD_ID };
+    }
+    // Replacing ZIP/reloading an extension must not keep an older renderer in
+    // the same Editor window. Old builds only refresh their *old* CSS/logic.
+    try { w.__vHierarchy388.stop(); }
+    catch (err) { console.warn('[vHierarchy] previous renderer cleanup failed:',err); }
+    delete w.__vHierarchy388;
+  }
 
   const PALETTE = ['#777d89', '#b35e68', '#b48e4f', '#a9a857', '#61a886', '#5d94b5', '#737cc2', '#a36bb4', '#b56e9d'];
   const ICONS = ['folder','camera','light','script','particle','physics','audio','material','prefab','canvas','settings','favorite','animation','sprite','atlas','shader','scene','timeline','transform','database','service','network','input','mouse','gamepad','group','grid','eye','lock','key','bug','flag','star','heart','ui_panel','code'];
@@ -153,21 +163,20 @@
       padding-left:var(--vh-action-gutter-width) !important;
     }
     .tree[data-vh-lock-gutter][data-vh-quick-toggle] { --vh-action-gutter-width:42px; }
-    /* Only the dotted vertical rail moves. Keep the native horizontal bar,
-       drop-box rectangle, and all drag/drop hit testing exactly where Cocos
-       places them. The individual translate property survives
-       Cocos' inline transform styles. Creator shows the box only for [hoving],
-       so no extra [hoving] dependency is needed on the alignment itself. */
-    /* Creator 3.8.8 puts a 2px SOLID border on .drop-box itself in addition
-       to the dashed .vertical-line child. Prior fixes moved only the child,
-       leaving the solid left border visibly stranded one indent to the left.
-       Hide that duplicate edge while retaining the entire native box geometry,
-       top/bottom borders, horizontal indicator, and mouse hit testing. */
-    .content > .tree[data-vh-lock-gutter][hoving]:not([searching]) + .drop-box {
+    /* Cocos computes the native drop rail in the unpadded .content coordinate
+       system, while vHierarchy shifts tree rows by the 22/42px Lock/Active
+       gutter. The remaining 2px is accounted for by Creator's drop-box border.
+       Move ONLY the dotted vertical child in CSS, so this works immediately
+       for both node drags and external prefab/assets drags without racing
+       native dragover events or relying on stale item geometry. */
+    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box {
       border-left-color:transparent !important;
     }
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .vertical-line {
-      translate:var(--vh-drop-vertical-shift,0px) 0 !important;
+      translate:20px 0 !important;
+    }
+    .content > .tree[data-vh-lock-gutter][data-vh-quick-toggle]:not([searching]) + .drop-box > .vertical-line {
+      translate:40px 0 !important;
     }
     /* The marker must render ABOVE our tinted and selected row backgrounds.
        Creator's default z-index:0 sits underneath the table's z-index:1. */
@@ -400,7 +409,8 @@
     return item;
   }
   function style(root: Document | ShadowRoot): void {
-    if (root.querySelector('style[data-vh-style]')) return;
+    const existing = root.querySelector('style[data-vh-style]') as HTMLStyleElement | null;
+    if (existing) { if (existing.textContent !== CSS) existing.textContent = CSS; return; }
     const node = el('style'); node.setAttribute('data-vh-style', ''); node.textContent = CSS;
     if (root instanceof Document) (root.head || root.documentElement).appendChild(node);
     else root.appendChild(node);
@@ -769,123 +779,9 @@
     if (state.options.sceneSelector && !scene) bar.insertBefore(btn('▤', 'Scene selector', () => { void showScenes(); }), bar.lastElementChild);
     if (!state.options.sceneSelector) scene?.remove();
   }
-  /** The dashed native .drop-box vertical-line is NOT part of our guide
-   * pseudo-elements. After Cocos computes each dragover position, align its
-   * vertical rail to the same visible child-branch line used by vHierarchy.
-   * Measure real DOM positions; use no hardcoded 20px/22px correction. */
-  const treeGuideRows = new WeakMap<HTMLElement, Item[]>();
-  const dropListeners = new Map<HTMLElement, () => void>();
-  const dropFrames = new Map<HTMLElement, number>();
-  function alignDropGuide(tree: HTMLElement): void {
-    const hint = tree.nextElementSibling as HTMLElement | null;
-    if (!hint?.classList.contains('drop-box')) return;
-    const reset = (): void => {
-      if (hint.style.getPropertyValue('--vh-drop-vertical-shift'))
-        hint.style.removeProperty('--vh-drop-vertical-shift');
-    };
-    if (!state.options.enabled || !state.options.hierarchyLines ||
-        !tree.hasAttribute('hoving') || tree.hasAttribute('searching') ||
-        !tree.hasAttribute('data-vh-lock-gutter')) { reset(); return; }
-    const content = tree.parentElement;
-    if (!content) { reset(); return; }
-    const top = hint.getBoundingClientRect().top;
-    const targets = treeGuideRows.get(tree);
-    if (!targets?.length) { reset(); return; }
-    // Binary search in the native flat, ordered list rather than measuring
-    // thousands of rows on every dragover. Cocos' rows are monotonic in Y.
-    // Prefer the next row when a reorder line falls exactly between siblings.
-    let low=0, high=targets.length;
-    while (low<high) {
-      const mid=(low+high)>>1;
-      if (targets[mid].drag.getBoundingClientRect().top < top - 3) low=mid+1;
-      else high=mid;
-    }
-    // The visual insertion marker conceptually belongs to the FIRST visible
-    // row at or below it. This avoids snapping child-drop rails back onto the
-    // hovered parent row when the dashed line is rendered near the parent's
-    // bottom edge. Fall back to nearest measured row only when no lower row is
-    // available (for example at the end of the list).
-    let best: Item | null = null, bestDistance = Infinity;
-    for (let i=low; i<Math.min(targets.length, low+3); i++) {
-      const item=targets[i];
-      if (!item.guide || item.searching) continue;
-      best = item;
-      bestDistance = Math.abs(item.drag.getBoundingClientRect().top - top);
-      break;
-    }
-    if (!best) for (let i=Math.max(0,low-2); i<Math.min(targets.length,low+2); i++) {
-      const item=targets[i];
-      if (!item.guide || item.searching) continue;
-      const rect=item.drag.getBoundingClientRect();
-      const dist=rect.top>=top-3 ? Math.abs(rect.top-top) :
-        (top<=rect.bottom ? Math.min(10,Math.abs(rect.top-top)) : Math.abs(rect.bottom-top)+10);
-      if (dist<bestDistance) {best=item;bestDistance=dist;}
-    }
-    if (!best?.guide) { reset(); return; }
-    const {result,index} = best.guide;
-    const node = result.nodes[index];
-    const step = result.layout.step;
-    if (!node.valid || bestDistance > Math.max(25,step*2)) { reset(); return; }
-    const rect = best.drag.getBoundingClientRect();
-    const trunkLevel = VHierarchyGuides.dropTrunkLevel(result.nodes,index);
-    if (trunkLevel === null) { reset(); return; }
-    // Crucial: pick the actual PAINTED child-branch column from the
-    // target row, never a depth inferred from the already-wrong native dotted
-    // line. This keeps the dotted rail directly on top of vHierarchy's own
-    // visible vertical guide instead of leaving it one indent too far left.
-    const guideX = rect.left + node.offset + result.layout.base + (trunkLevel - .5) * step;
-    const vertical = hint.querySelector(':scope > .vertical-line') as HTMLElement | null;
-    if (!vertical) { reset(); return; }
-    const markerRect = vertical.getBoundingClientRect();
-    if (!markerRect.width || !markerRect.height) { reset(); return; }
-    const renderedX = markerRect.left + markerRect.width / 2;
-    const oldShift = Number.parseFloat(hint.style.getPropertyValue('--vh-drop-vertical-shift')) || 0;
-    const shift = VHierarchyGuides.dropTrunkShift(renderedX,oldShift,guideX,step);
-    if (shift === null) { reset(); return; }
-    const value = `${shift}px`;
-    if (hint.style.getPropertyValue('--vh-drop-vertical-shift') !== value)
-      hint.style.setProperty('--vh-drop-vertical-shift',value);
-  }
-  function syncDropGuide(tree: HTMLElement): void {
-    if (dropFrames.has(tree)) return;
-    const frame = requestAnimationFrame(() => {
-      dropFrames.delete(tree);
-      if (!stopped && tree.isConnected) alignDropGuide(tree);
-    });
-    dropFrames.set(tree,frame);
-  }
-  function observeDropGuide(tree: HTMLElement): void {
-    if (dropListeners.has(tree)) return;
-    // Passive capture: never prevent, retarget, or intercept Cocos drag events.
-    const onDrag = (): void => syncDropGuide(tree);
-    tree.addEventListener('dragover',onDrag,true);
-    tree.addEventListener('dragleave',onDrag,true);
-    tree.addEventListener('drop',onDrag,true);
-    const hint = tree.nextElementSibling as HTMLElement | null;
-    const hintWatcher = new MutationObserver(() => syncDropGuide(tree));
-    if (hint?.classList.contains('drop-box')) {
-      hintWatcher.observe(hint, {attributes:true,attributeFilter:['style']});
-      // Cocos updates this element's native left/height style while dragging.
-      // Observing it catches asset/prefab drags even when 'dragover' doesn't
-      // pass through the ui-drag-area itself.
-      const vertical = hint.querySelector(':scope > .vertical-line');
-      if (vertical) hintWatcher.observe(vertical,{attributes:true,attributeFilter:['style']});
-    }
-    dropListeners.set(tree,() => {
-      hintWatcher.disconnect();
-      tree.removeEventListener('dragover',onDrag,true);
-      tree.removeEventListener('dragleave',onDrag,true);
-      tree.removeEventListener('drop',onDrag,true);
-      if (hint?.classList.contains('drop-box')) hint.style.removeProperty('--vh-drop-vertical-shift');
-    });
-  }
-  function pruneDropGuides(): void {
-    for (const [tree,release] of dropListeners) if (!tree.isConnected) {
-      release();dropListeners.delete(tree);
-      const id=dropFrames.get(tree);if (id!==undefined)cancelAnimationFrame(id);
-      dropFrames.delete(tree);
-    }
-  }
+  /* Native Cocos drag/drop owns .drop-box and its event lifecycle. Its dashed
+   * vertical indicator is compensated with CSS only (see gutter rules above).
+   * Do not attach drag/drop listeners, mutation observers or animation loops. */
   /** Watch native Vue tree changes so guides render in the expand frame, not at
    * the 1.4s resilience polling interval. Ignore changes from our own controls. */
   function observeTree(tree: HTMLElement): void {
@@ -942,7 +838,6 @@
           if (scannedTrees.has(tree)) continue; scannedTrees.add(tree);
           listRoot = tree;
           observeTree(tree);
-          observeDropGuide(tree);
           changeAttr(tree, 'data-vh-lock-gutter', state.options.enabled ? 'true' : undefined);
           changeAttr(tree, 'data-vh-quick-toggle', state.options.enabled && state.options.activationToggle ? 'true' : undefined);
           rootHost = tree.getRootNode() as Document | ShadowRoot;
@@ -1001,13 +896,11 @@
           }
           previousTreePaths.set(tree,nextPaths);
           updateGuides(group);
-          treeGuideRows.set(tree,group);
-          if (tree.hasAttribute('hoving')) syncDropGuide(tree);
           listen(rootHost);
         }
       }
     } catch (e) { logError('scan',e); }
-    finally { pruneTreeObservers(); pruneDropGuides(); }
+    finally { pruneTreeObservers(); }
   }
   function schedule(): void { if (!stopped && !queued) { queued=true; requestAnimationFrame(scan); } }
   function listen(root: Document | ShadowRoot): void {
@@ -1436,15 +1329,11 @@
     schedule();
   }
   function applyState(input: State): void { if (!input?.options) return; state=input; schedule(); }
-  function stats(): unknown { return { version:'0.1.1',scans,panelCount,visibleRows:views.length,vueRows,hasActiveNode:!!lastHovered?.uuid,lastError }; }
+  function stats(): unknown { return { version:'0.1.1',build:BUILD_ID,scans,panelCount,visibleRows:views.length,vueRows,hasActiveNode:!!lastHovered?.uuid,lastError }; }
   function stop(): void {
     stopped=true; appearanceWrites.clear(); prefabPromotions.clear(); googleFontLink?.remove();googleFontLink=null; layerLookup.dispose(); if(timer)clearInterval(timer);observer?.disconnect();closePopup();
     for (const watcher of treeObservers.values()) watcher.disconnect();
     treeObservers.clear();
-    for (const release of dropListeners.values()) release();
-    dropListeners.clear();
-    for (const frame of dropFrames.values()) cancelAnimationFrame(frame);
-    dropFrames.clear();
     for(const release of listeners) release(); listeners.length=0;
     for(const panel of panels())for(const r of roots(panel)){
       for(const tree of (r as Element).querySelectorAll?.('.tree[data-vh-lock-gutter],.tree[data-vh-quick-toggle]')||[]) {
@@ -1471,7 +1360,7 @@
     }
     delete w.__vHierarchy388;
   }
-  w.__vHierarchy388={refresh,stop,stats,applyState,setIcons,setMaterialSymbols,showSettings,sceneNodeChanged};
+  w.__vHierarchy388={buildId:BUILD_ID,refresh,stop,stats,applyState,setIcons,setMaterialSymbols,showSettings,sceneNodeChanged};
   // A bounded periodic scan is robust to panel docking and native Vue rerendering.
   // Mutation observer only tracks opening/docking; overlays are not persisted in Vue.
   observer=new MutationObserver(()=>schedule());

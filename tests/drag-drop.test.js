@@ -352,12 +352,12 @@ test('center hover paints a short dotted node outline excluding left actions and
 });
 
 test('parent outline uses four matching dotted gradients; sibling horizontal indicator remains Cocos-native',()=>{
-  assert.match(renderer,/\\.drop-box\\[data-vh-node-outline='true'\\] \\{\\s*border-color:transparent !important/);
+  assert.match(renderer,/\.drop-box\[data-vh-node-outline='true'\] \{\s*border-color:transparent !important/);
   assert.match(renderer,/background-position:left top,left bottom,left top,right top/);
   assert.match(renderer,/background-size:100% 2px,100% 2px,2px 100%,2px 100%/);
-  assert.match(renderer,/if \\(centerHover\\)\\s*syncNodeOutline\\(box, target, nativeRect, targetRect\\)/);
-  assert.match(renderer,/else\\s*clearNodeOutline\\(box\\)/);
-  assert.match(renderer,/function clearNativeDropPaint\\(box\\) \\{\\s*clearNodeOutline\\(box\\)/);
-  assert.match(renderer,/\\.content > \\.tree\\[hoving\\] \\+ \\.drop-box \\{\\s*z-index:2 !important; pointer-events:none !important/);
-  assert.doesNotMatch(renderer,/\\.drop-box\\[data-vh-thin-insert='true'\\]/);
+  assert.match(renderer,/if \(centerHover\)\s*syncNodeOutline\(box, target, nativeRect, targetRect\)/);
+  assert.match(renderer,/else\s*clearNodeOutline\(box\)/);
+  assert.match(renderer,/function clearNativeDropPaint\(box\) \{\s*clearNodeOutline\(box\)/);
+  assert.match(renderer,/\.content > \.tree\[hoving\] \+ \.drop-box \{\s*z-index:2 !important; pointer-events:none !important/);
+  assert.doesNotMatch(renderer,/\.drop-box\[data-vh-thin-insert='true'\]/);
 });

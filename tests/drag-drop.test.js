@@ -194,7 +194,7 @@ test('legacy drop markup is removed when upgrading from Patch 36, not reintroduc
 });
 
 test('native Cocos retains its original parent and sibling drop target',()=>{
-  assert.match(renderer,/Never draw over the native horizontal bar/);
+  assert.match(renderer,/The HORIZONTAL drop border and parent outline are 100% native Cocos/);
   assert.match(renderer,/const markerRect=marker!\.getBoundingClientRect\(\)/);
   assert.match(renderer,/p\.level===best\.level\?DROP_DASH_IMAGE:p\.image/);
   assert.doesNotMatch(renderer,/const nativeParentArea/);

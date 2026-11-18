@@ -15,7 +15,7 @@
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch36-pointer-drop-intent';
+  const BUILD_ID = '0.1.1-patch37-native-drop-preview';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -163,67 +163,25 @@
       padding-left:var(--vh-action-gutter-width) !important;
     }
     .tree[data-vh-lock-gutter][data-vh-quick-toggle] { --vh-action-gutter-width:42px; }
-    /* The native .drop-box height cannot distinguish sibling reorder from
-       inserting into a parent (expanded subtrees can make either box tall).
-       A passive dragover observer sets data-vh-drop-mode based on the cursor's
-       actual position inside the receiving native row. */
+    /* Cocos alone owns the parent-vs-sibling drop decision and its marker.
+       A rendered .drop-box can be TALL even when Cocos intends a sibling
+       insertion. Never interpret box height, hover position or pointer Y as
+       permission to highlight a parent (Patch 35/36 regression).
+       Preserve the native box/border/size so Creator shows its actual target.
+       vHierarchy only aligns the dashed rail with our left action gutter.
+       The clip trims the extra horizontal overhang without moving/hit-testing
+       the native marker. Neither rule changes any drag, drop or click event. */
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box {
-      --vh-drop-rail-start:0px;
-      border-color:transparent !important;
-      background-image:linear-gradient(90deg,
-        transparent 0,
-        transparent calc(var(--vh-drop-rail-start) + 1px),
-        var(--color-focus-border) calc(var(--vh-drop-rail-start) + 1px)) !important;
-      background-repeat:no-repeat !important;
-      background-origin:border-box !important;
-      background-position:left bottom !important;
-      background-size:100% 2px !important;
+      --vh-drop-rail-shift:0px;
+      border-left-color:transparent !important;
     }
     .content > .tree[data-vh-lock-gutter][data-vh-quick-toggle]:not([searching]) + .drop-box {
-      --vh-drop-rail-start:20px;
+      --vh-drop-rail-shift:20px;
+      clip-path:inset(-1000px -1000px -1000px 20px);
     }
-    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box::before {
-      content:none !important;
-    }
-    /* Parent intent from native dragover position: never show the insertion
-       line or the tiny native endpoint over the highlighted target row. */
-    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box[data-vh-drop-mode='parent'] {
-      background-image:none !important;
-    }
-    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box[data-vh-drop-mode='parent'] > .vertical-line,
+    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .vertical-line,
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .horizontal-line {
-      visibility:hidden !important;
-    }
-    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .vertical-line {
-      translate:0px 0 !important;
-    }
-    .content > .tree[data-vh-lock-gutter][data-vh-quick-toggle]:not([searching]) + .drop-box > .vertical-line {
-      translate:20px 0 !important;
-    }
-    /* A parent drop is a ROW highlight (never an insertion line). Outline the
-       full row, including the 22/42px action gutter, using a pointer-inert
-       overlay on the node rather than two disjoint rectangles/box-shadows.
-       This is NOT placed over other siblings and never changes Prefab text. */
-    .tree[data-vh-lock-gutter] > .tree-node[data-vh-drop-parent] {position:relative;}
-    .tree[data-vh-lock-gutter] > .tree-node[data-vh-drop-parent]::before {
-      content:'';
-      position:absolute;
-      left:calc(0px - var(--vh-action-gutter-width));
-      right:0;
-      top:0;
-      height:20px;
-      box-sizing:border-box;
-      background:rgba(34,143,178,.12);
-      border:1px solid var(--color-focus-border,#47bdf1);
-      pointer-events:none;
-      z-index:6;
-    }
-    .tree[data-vh-lock-gutter] > .tree-node[data-vh-drop-parent] > .drag-item {
-      background-color:rgba(34,143,178,.3) !important;
-      background-image:linear-gradient(rgba(44,164,210,.18),rgba(44,164,210,.18)) !important;
-    }
-    .tree[data-vh-lock-gutter] > .tree-node[data-vh-drop-parent] > .drag-item > .vh-action-gutter {
-      background:rgba(34,143,178,.3) !important;
+      translate:var(--vh-drop-rail-shift) 0 !important;
     }
     /* The marker must render ABOVE our tinted and selected row backgrounds.
        Creator's default z-index:0 sits underneath the table's z-index:1. */
@@ -415,17 +373,6 @@
   let timer: ReturnType<typeof setInterval> | null = null;
   let observer: MutationObserver | null = null;
   const treeObservers = new Map<HTMLElement, MutationObserver>();
-  interface DropPointer {row: HTMLElement; y: number;}
-  interface DropObserver {
-    box: HTMLElement;
-    watcher: MutationObserver;
-    parent: HTMLElement | null;
-    frame: number | null;
-    pointer: DropPointer | null;
-    onDragOver: (event: DragEvent) => void;
-    onDrop: () => void;
-  }
-  const dropObservers = new Map<HTMLElement, DropObserver>();
   const layerLookup = new VHierarchyLayers.Lookup(uuid => req('scene','query-node', uuid), () => schedule());
   const prefabPromotions = new Set<string>();
   const priorRows = new WeakMap<HTMLElement, {uuid: string; path: string; appearance: Appearance}>();
@@ -837,108 +784,13 @@
     if (state.options.sceneSelector && !scene) bar.insertBefore(btn('▤', 'Scene selector', () => { void showScenes(); }), bar.lastElementChild);
     if (!state.options.sceneSelector) scene?.remove();
   }
-  /** Cocos owns the drag operation. We observe native dragover coordinates
-   * in capture phase but NEVER call preventDefault/stopPropagation or modify
-   * the native drop target. The native .drop-box height is NOT intent: a tall
-   * box can span an expanded subtree during a same-level insertion. */
-  function dropMode(pointerY: number, rowTop: number, rowHeight: number): 'insert' | 'parent' {
-    if (!Number.isFinite(pointerY) || !Number.isFinite(rowTop) ||
-        !Number.isFinite(rowHeight) || rowHeight < 8) return 'insert';
-    const position = (pointerY - rowTop) / rowHeight;
-    // Middle of the hovered row -> add as child; edges -> reorder siblings.
-    return position >= .28 && position <= .72 ? 'parent' : 'insert';
-  }
-  /** Resolve exactly the row receiving the native event, never a child at the
-   * top/bottom of an expanded .drop-box nor a stale :hover ancestor. */
-  function dragRow(tree: HTMLElement, event: DragEvent): HTMLElement | null {
-    for (const target of event.composedPath()) {
-      if (target instanceof HTMLElement && target.classList.contains('tree-node') &&
-          target.parentElement === tree) return target;
-    }
-    const target = event.target;
-    const candidate = target instanceof Element ? target.closest('.tree-node') : null;
-    return candidate?.parentElement === tree ? candidate as HTMLElement : null;
-  }
-  function clearDropTarget(tree: HTMLElement, box: HTMLElement): void {
-    const saved=dropObservers.get(tree);
-    if (saved?.parent) saved.parent.removeAttribute('data-vh-drop-parent');
-    if (saved) { saved.parent=null; saved.pointer=null; }
-    box.removeAttribute('data-vh-drop-mode');
-  }
-  function updateDropTarget(tree: HTMLElement, box: HTMLElement): void {
-    const entry=dropObservers.get(tree);
-    if (stopped || !state.options.enabled || !tree.isConnected ||
-        !tree.hasAttribute('hoving') || tree.hasAttribute('searching') ||
-        !tree.hasAttribute('data-vh-lock-gutter') ||
-        getComputedStyle(box).display==='none') {clearDropTarget(tree,box);return;}
-    const rect=box.getBoundingClientRect();
-    if (!(rect.width>0 && rect.height>0)) {clearDropTarget(tree,box);return;}
-    // A parent highlight needs evidence from the current *native drag event*.
-    // No pointer? Keep only Cocos' insertion line; NEVER guess another parent.
-    const pointer=entry?.pointer;
-    let parent:HTMLElement | null=null;
-    if (pointer?.row?.isConnected && pointer.row.parentElement===tree) {
-      const drag=pointer.row.querySelector(':scope > .drag-item') as HTMLElement | null;
-      const bounds=(drag||pointer.row).getBoundingClientRect();
-      const nativeParentArea=rect.height>Math.max(8,bounds.height*.55);
-      if (nativeParentArea && dropMode(pointer.y,bounds.top,bounds.height)==='parent') parent=pointer.row;
-    }
-    if (entry?.parent && entry.parent!==parent) entry.parent.removeAttribute('data-vh-drop-parent');
-    if (entry) entry.parent=parent;
-    if (parent) parent.setAttribute('data-vh-drop-parent','true');
-    box.setAttribute('data-vh-drop-mode',parent?'parent':'insert');
-  }
-  function detachDropObserver(tree: HTMLElement, entry: DropObserver): void {
-    entry.watcher.disconnect();
-    tree.removeEventListener('dragover',entry.onDragOver,true);
-    tree.removeEventListener('drop',entry.onDrop,true);
-    tree.removeEventListener('dragend',entry.onDrop,true);
-    if (entry.frame!==null) cancelAnimationFrame(entry.frame);
-    clearDropTarget(tree,entry.box);
-  }
-  function observeDropTarget(tree: HTMLElement): void {
+  /** Remove synthetic parent-drop attributes left by earlier versions.
+   * The new renderer never writes them: Creator alone determines the intent. */
+  function clearLegacyDropPreview(tree: HTMLElement): void {
     const box=tree.nextElementSibling as HTMLElement | null;
-    if (!box?.classList.contains('drop-box')) return;
-    const prior=dropObservers.get(tree);
-    if (prior?.box===box) {requestDropUpdate(tree);return;}
-    if (prior) {detachDropObserver(tree,prior);dropObservers.delete(tree);}
-    const watcher=new MutationObserver(()=>requestDropUpdate(tree));
-    // Cocos updates box.style and tree[hoving] during drag. Observe only these
-    // native properties, not our own highlight attributes (no observer loop).
-    watcher.observe(box,{attributes:true,attributeFilter:['style']});
-    watcher.observe(tree,{attributes:true,attributeFilter:['hoving','searching']});
-    const onDragOver=(event:DragEvent):void=>{
-      const row=dragRow(tree,event);
-      const current=dropObservers.get(tree);
-      if (!current) return;
-      current.pointer=row && Number.isFinite(event.clientY) ? {row,y:event.clientY} : null;
-      requestDropUpdate(tree);
-    };
-    const onDrop=():void=>{
-      const current=dropObservers.get(tree);
-      if (current) current.pointer=null;
-      requestDropUpdate(tree);
-    };
-    // Passive capture only: does not affect drag acceptability, click, or HUD.
-    tree.addEventListener('dragover',onDragOver,{capture:true,passive:true});
-    tree.addEventListener('drop',onDrop,true);
-    tree.addEventListener('dragend',onDrop,true);
-    dropObservers.set(tree,{box,watcher,parent:null,frame:null,pointer:null,onDragOver,onDrop});
-    requestDropUpdate(tree);
-  }
-  function requestDropUpdate(tree: HTMLElement): void {
-    const entry=dropObservers.get(tree);
-    if (!entry || entry.frame!==null) return;
-    entry.frame=requestAnimationFrame(()=>{
-      entry.frame=null;
-      updateDropTarget(tree,entry.box);
-    });
-  }
-  function pruneDropObservers(): void {
-    for (const [tree,entry] of dropObservers) if (!tree.isConnected || !entry.box.isConnected) {
-      detachDropObserver(tree,entry);
-      dropObservers.delete(tree);
-    }
+    if (box?.classList.contains('drop-box')) box.removeAttribute('data-vh-drop-mode');
+    for (const row of tree.querySelectorAll(':scope > .tree-node[data-vh-drop-parent]'))
+      row.removeAttribute('data-vh-drop-parent');
   }
   /** Watch native Vue tree changes so guides render in the expand frame, not at
    * the 1.4s resilience polling interval. Ignore changes from our own controls. */
@@ -996,7 +848,7 @@
           if (scannedTrees.has(tree)) continue; scannedTrees.add(tree);
           listRoot = tree;
           observeTree(tree);
-          observeDropTarget(tree);
+          clearLegacyDropPreview(tree);
           changeAttr(tree, 'data-vh-lock-gutter', state.options.enabled ? 'true' : undefined);
           changeAttr(tree, 'data-vh-quick-toggle', state.options.enabled && state.options.activationToggle ? 'true' : undefined);
           rootHost = tree.getRootNode() as Document | ShadowRoot;
@@ -1059,7 +911,7 @@
         }
       }
     } catch (e) { logError('scan',e); }
-    finally { pruneTreeObservers(); pruneDropObservers(); }
+    finally { pruneTreeObservers(); }
   }
   function schedule(): void { if (!stopped && !queued) { queued=true; requestAnimationFrame(scan); } }
   function listen(root: Document | ShadowRoot): void {
@@ -1493,11 +1345,10 @@
     stopped=true; appearanceWrites.clear(); prefabPromotions.clear(); googleFontLink?.remove();googleFontLink=null; layerLookup.dispose(); if(timer)clearInterval(timer);observer?.disconnect();closePopup();
     for (const watcher of treeObservers.values()) watcher.disconnect();
     treeObservers.clear();
-    for (const [tree,entry] of dropObservers) detachDropObserver(tree,entry);
-    dropObservers.clear();
     for(const release of listeners) release(); listeners.length=0;
     for(const panel of panels())for(const r of roots(panel)){
       for(const tree of (r as Element).querySelectorAll?.('.tree[data-vh-lock-gutter],.tree[data-vh-quick-toggle]')||[]) {
+        clearLegacyDropPreview(tree as HTMLElement);
         tree.removeAttribute('data-vh-lock-gutter');
         tree.removeAttribute('data-vh-quick-toggle');
       }

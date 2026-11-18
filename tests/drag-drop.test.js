@@ -125,164 +125,105 @@ test('legacy toolbar injected inside .content is migrated before drag drop',()=>
   assert.deepEqual(f.content.children,[f.tree,f.dropBox,f.scrollBar]);
 });
 
-test('native horizontal insertion line is painted once at the dotted trunk without moving the drop target',()=>{
-  assert.match(renderer,/\.tree\[data-vh-lock-gutter\]:not\(\[searching\]\) \+ \.drop-box > \.vertical-line \{\s*translate:0px 0 !important/);
-  assert.match(renderer,/\.tree\[data-vh-lock-gutter\]\[data-vh-quick-toggle\]:not\(\[searching\]\) \+ \.drop-box > \.vertical-line \{\s*translate:20px 0 !important/);
-  assert.match(renderer,/border-color:transparent !important/);
-  assert.match(renderer,/\.content > \.tree\[hoving\] \+ \.drop-box \{\s*z-index:2 !important; pointer-events:none !important/);
-  assert.match(renderer,/\.drop-box > \.horizontal-line \{\s*visibility:hidden !important/);
-  assert.match(renderer,/background-position:left bottom !important/);
+
+test('native Cocos owns both parent and sibling drop intent: no custom row classifier',()=>{
+  assert.doesNotMatch(renderer,/function dropMode\(/);
+  assert.doesNotMatch(renderer,/function updateDropTarget\(/);
+  assert.doesNotMatch(renderer,/function observeDropTarget\(/);
+  assert.doesNotMatch(renderer,/data-vh-drop-parent',\s*'true'/);
+  assert.doesNotMatch(renderer,/setAttribute\('data-vh-drop-mode'/);
+  assert.doesNotMatch(renderer,/querySelector\(':scope > \.tree-node:hover'/);
+  assert.doesNotMatch(renderer,/addEventListener\('dragover'/);
+  assert.doesNotMatch(renderer,/addEventListener\('drop'/);
+  assert.match(renderer,/clearLegacyDropPreview\(tree\)/);
+});
+
+test('visual-only native dotted marker aligns with hierarchy 20px Active gutter',()=>{
+  assert.match(renderer,/\.tree\[data-vh-lock-gutter\]:not\(\[searching\]\) \+ \.drop-box > \.vertical-line,/);
+  assert.match(renderer,/\.drop-box > \.horizontal-line \{\s*translate:var\(--vh-drop-rail-shift\) 0 !important/);
+  assert.match(renderer,/--vh-drop-rail-shift:0px/);
+  assert.match(renderer,/--vh-drop-rail-shift:20px/);
+  assert.match(renderer,/clip-path:inset\(-1000px -1000px -1000px 20px\)/);
+  assert.match(renderer,/border-left-color:transparent !important/);
   assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*transform:translateX/);
+  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*pointer-events:auto/);
   assert.match(renderer,/--vh-action-gutter-width:22px/);
   assert.match(renderer,/--vh-action-gutter-width:42px/);
 });
-test('selected guide path uses native is-selected, keeps parent elbow distinct, and cleans up',()=>{
+
+test('native Cocos box height, border and background remain under its control',()=>{
+  assert.doesNotMatch(renderer,/background-image:linear-gradient\(90deg,\s*transparent 0,\s*transparent calc\(var\(--vh-drop-rail-start\)/);
+  assert.doesNotMatch(renderer,/\.drop-box\[data-vh-drop-mode='parent'\]/);
+  assert.doesNotMatch(renderer,/\.tree-node\[data-vh-drop-parent\]::before/);
+  assert.doesNotMatch(renderer,/\.drop-box::before\s*\{/);
+  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*border-top-color:transparent/);
+  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*border-bottom-color:transparent/);
+  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*height:/);
+  assert.match(renderer,/\.content > \.tree\[hoving\] \+ \.drop-box \{\s*z-index:2 !important; pointer-events:none !important/);
+});
+
+test('reorder and parent drop keep native indicator without injecting false parent attrs',()=>{
+  const start=renderer.indexOf('function clearLegacyDropPreview(tree) {');
+  const end=renderer.indexOf('function observeTree(',start);
+  assert.ok(start>0&&end>start);
+  const row={removed:[],removeAttribute(name){this.removed.push(name);}};
+  const box={removed:[],classList:{contains:name=>name==='drop-box'},removeAttribute(name){this.removed.push(name);}};
+  const tree={nextElementSibling:box,querySelectorAll(selector){
+    assert.equal(selector,':scope > .tree-node[data-vh-drop-parent]');
+    return [row];
+  }};
+  const scope={};
+  vm.runInNewContext(renderer.slice(start,end)+'\nthis.clean=clearLegacyDropPreview;',scope);
+  scope.clean(tree);
+  assert.deepEqual(row.removed,['data-vh-drop-parent']);
+  assert.deepEqual(box.removed,['data-vh-drop-mode']);
+});
+
+test('legacy drop markup is removed when upgrading from Patch 36, not reintroduced',()=>{
+  assert.match(renderer,/function clearLegacyDropPreview\(tree\)/);
+  assert.match(renderer,/row\.removeAttribute\('data-vh-drop-parent'\)/);
+  assert.match(renderer,/box\.removeAttribute\('data-vh-drop-mode'\)/);
+  assert.doesNotMatch(renderer,/setAttribute\('data-vh-drop-parent'/);
+  assert.doesNotMatch(renderer,/setAttribute\('data-vh-drop-mode'/);
+});
+
+test('native sibling-marker style is not modified by vHierarchy drop mode or reparent geometry',()=>{
+  assert.match(renderer,/Cocos alone owns the parent-vs-sibling drop decision/);
+  assert.match(renderer,/A rendered \.drop-box can be TALL even when Cocos intends a sibling/);
+  assert.doesNotMatch(renderer,/const nativeParentArea/);
+  assert.doesNotMatch(renderer,/dropMode\(pointer/);
+  assert.doesNotMatch(renderer,/getBoundingClientRect\(\)\.height.*drop/i);
+});
+
+test('selected normal guide highlight and native Prefab text are unchanged',()=>{
   assert.match(renderer,/VHierarchyGuides\.selectedGuides\(result\.nodes/);
   assert.match(renderer,/item\.row\.getAttribute\('is-selected'\) === 'true'/);
   assert.match(renderer,/data-vh-guide-selected-elbow/);
   assert.match(renderer,/data-vh-guide-through-elbow/);
   assert.match(renderer,/border-left-color:var\(--color-focus-border,#47bdf1\) !important/);
   assert.match(renderer,/border-bottom-color:var\(--color-focus-border,#47bdf1\) !important/);
-  assert.match(renderer,/for \(const name of \['data-vh-guide',\s*'data-vh-elbow',\s*'data-vh-guide-selected'/);
+  assert.doesNotMatch(renderer,/\.tree-node\[data-vh-drop-parent\] > \.drag-item/);
 });
-test('native drag/drop owns events and no custom correction loop interferes with clicks or prefab drag',()=>{
-  assert.doesNotMatch(renderer,/function alignDropGuide/);
-  assert.doesNotMatch(renderer,/observeDropGuide\(tree\)/);
-  assert.doesNotMatch(renderer,/treeGuideRows\.set/);
-  assert.doesNotMatch(renderer,/--vh-drop-vertical-shift/);
-  assert.match(renderer,/addEventListener\('dragover',\s*onDragOver,\s*\{\s*capture:\s*true,\s*passive:\s*true\s*\}\)/);
-  assert.match(renderer,/addEventListener\('drop',\s*onDrop,\s*true\)/);
-  assert.doesNotMatch(renderer,/addEventListener\(['"]mousedown['"],\s*guideDown/);
-});
-test('native drop-box borders are transparent and only one bottom background line is drawn',()=>{
-  // Creator 3.8.8 uses a 2px border on .drop-box AND a separate dashed vertical child.
-  // Leaving the former visible produces the reported cyan line one indent outside.
-  assert.match(renderer,/\.tree\[data-vh-lock-gutter\]:not\(\[searching\]\) \+ \.drop-box \{\s*--vh-drop-rail-start:0px;\s*border-color:transparent !important/);
-  assert.match(renderer,/\.drop-box > \.vertical-line \{\s*translate:0px 0 !important/);
-  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*border-left-width:0/);
-  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*display:none/);
-  assert.match(renderer,/\.content > \.tree\[hoving\] \+ \.drop-box \{\s*z-index:2 !important; pointer-events:none !important/);
-});
+
 test('guide shortcuts never cancel mousedown or pointerdown required for native drag and HUD clicks',()=>{
   assert.doesNotMatch(renderer,/addEventListener\(['"]mousedown['"],\s*guideDown/);
   assert.doesNotMatch(renderer,/addEventListener\(['"]pointerdown['"],\s*guideDown/);
   assert.match(renderer,/root\.addEventListener\('click', guideClick, true\)/);
   assert.match(renderer,/root\.removeEventListener\('click', guideClick, true\)/);
 });
-test('new plugin build replaces a stale renderer instead of reusing its old CSS',()=>{
-  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch36-pointer-drop-intent'/);
+
+test('new plugin build replaces stale renderer and CSS',()=>{
+  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch37-native-drop-preview'/);
   assert.match(renderer,/if \(w\.__vHierarchy388\.buildId === BUILD_ID\)/);
   assert.match(renderer,/w\.__vHierarchy388\.stop\(\)/);
   assert.match(renderer,/delete w\.__vHierarchy388/);
   assert.match(renderer,/w\.__vHierarchy388 = \{ buildId: BUILD_ID,/);
-});
-test('existing renderer stylesheet is updated whenever injected CSS changes',()=>{
   assert.match(renderer,/if \(existing\) \{\s*if \(existing\.textContent !== CSS\)\s*existing\.textContent = CSS;/);
-  assert.match(renderer,/function stats\(\) \{ return \{ version: '0\.1\.1', build: BUILD_ID,/);
 });
 
-test('drag dotted rail aligns to guide trunk instead of custom prefab icon for both toggle widths',()=>{
-  // Screenshot regression: native rail x35, visible vHierarchy trunk x55,
-  // unwanted Patch 31 dot at x75 beside the prefab icon.
-  const nativeRailX=35;
-  const expectedPaintedRail=(quickToggle)=>nativeRailX+(quickToggle?20:0);
-  assert.equal(expectedPaintedRail(true),55);
-  assert.equal(expectedPaintedRail(false),35);
-  assert.notEqual(expectedPaintedRail(true),75, 'must not move one indent too far toward icon');
-  assert.match(renderer,/native \.drop-box height cannot distinguish sibling reorder/);
-  assert.doesNotMatch(renderer,/translate:40px 0 !important/);
-  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*translate:/);
-  assert.match(renderer,/\.drop-box > \.horizontal-line \{\s*visibility:hidden !important/);
-  assert.match(renderer,/background-position:left bottom !important/);
-});
-
-
-// Regression for screenshot with two cyan bars, one at the root of the
-// parent's subtree and another at the insertion boundary. Tall markers are
-// PARENT targets; a short marker represents a sibling INSERT only.
-test('short native marker draws one insertion line; tall marker instead highlights the parent row',()=>{
-  assert.match(renderer,/background-image:linear-gradient\(90deg,/);
-  assert.match(renderer,/transparent calc\(var\(--vh-drop-rail-start\) \+ 1px\)/);
-  assert.match(renderer,/var\(--color-focus-border\) calc\(var\(--vh-drop-rail-start\) \+ 1px\)/);
-  assert.match(renderer,/background-repeat:no-repeat !important/);
-  assert.match(renderer,/background-origin:border-box !important/);
-  assert.match(renderer,/background-position:left bottom !important/);
-  assert.match(renderer,/background-size:100% 2px !important/);
-  assert.match(renderer,/border-color:transparent !important/);
-  assert.match(renderer,/\.drop-box::before \{\s*content:none !important/);
-  assert.doesNotMatch(renderer,/\.drop-box::before \{[^}]*height:2px/);
-  assert.doesNotMatch(renderer,/\.drop-box::before \{[^}]*background:var\(--color-focus-border\)/);
-  assert.match(renderer,/\.drop-box > \.horizontal-line \{\s*visibility:hidden !important/);
-  assert.match(renderer,/\.drop-box\[data-vh-drop-mode='parent'\] \{\s*background-image:none !important/);
-  assert.match(renderer,/\.tree-node\[data-vh-drop-parent\] > \.drag-item \{/);
-  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*transform:translateX/);
-  // Source geometry for native marker: border box starts x34, dotted child
-  // left x35. Only the optional Active column shifts both junctions +20.
-  const boxX=34;
-  for (const active of [false,true]) {
-    const shift=active?20:0;
-    const dotX=boxX+1+shift;
-    const horizontalStart=boxX+1+shift;
-    assert.equal(horizontalStart,dotX);
-    assert.equal(dotX,active?55:35);
-  }
-});
-test('native Cocos pointer/drop handling and unrelated search marker remain intact',()=>{
-  assert.match(renderer,/\.tree\[data-vh-lock-gutter\]:not\(\[searching\]\) \+ \.drop-box/);
-  assert.match(renderer,/addEventListener\('dragover',\s*onDragOver,\s*\{\s*capture:\s*true,\s*passive:\s*true\s*\}\)/);
-  assert.doesNotMatch(renderer,/addEventListener\(['"]mousedown['"],\s*guideDown/);
-  assert.doesNotMatch(renderer,/\.drop-box\s*\{[^}]*pointer-events:auto/);
-});
-
-
-function dropIntentHelpers() {
-  const start=renderer.indexOf('function dropMode(');
-  const end=renderer.indexOf('function clearDropTarget(',start);
-  assert.ok(start>0&&end>start);
-  const env={};
-  vm.runInNewContext(renderer.slice(start,end)+'\nthis.dropMode=dropMode;',env);
-  return env;
-}
-test('pointer enters middle of intended row for parent; edges stay insert despite tall native drop box',()=>{
-  const {dropMode}=dropIntentHelpers();
-  assert.equal(dropMode(100,100,20),'insert');
-  assert.equal(dropMode(104,100,20),'insert');
-  assert.equal(dropMode(106,100,20),'parent');
-  assert.equal(dropMode(110,100,20),'parent');
-  assert.equal(dropMode(114,100,20),'parent');
-  assert.equal(dropMode(116,100,20),'insert');
-  assert.equal(dropMode(120,100,20),'insert');
-  assert.equal(dropMode(NaN,100,20),'insert');
-});
-test('expanded native drop-box alone never selects a parent; insertion stays native',()=>{
-  assert.match(renderer,/const pointer = entry\?\.pointer/);
-  assert.match(renderer,/const nativeParentArea = rect\.height > Math\.max\(8, bounds\.height \* \.55\)/);
-  assert.match(renderer,/nativeParentArea && dropMode\(pointer\.y, bounds\.top, bounds\.height\) === 'parent'/);
-  assert.doesNotMatch(renderer,/tree\.querySelector\(':scope > \.tree-node:hover'\)/);
-  assert.doesNotMatch(renderer,/function dropParentIndex/);
-});
-test('full parent overlay spans actual row and Lock/Active gutter without changing prefab label',()=>{
-  assert.match(renderer,/\.tree-node\[data-vh-drop-parent\]::before/);
-  assert.match(renderer,/left:calc\(0px - var\(--vh-action-gutter-width\)\)/);
-  assert.match(renderer,/border:1px solid var\(--color-focus-border,#47bdf1\)/);
-  assert.match(renderer,/pointer-events:none/);
-  assert.match(renderer,/\.drop-box\[data-vh-drop-mode='parent'\] \{\s*background-image:none !important/);
-});
-test('passive native dragover handler never cancels Cocos drag or mouse interactions',()=>{
-  assert.match(renderer,/tree\.addEventListener\('dragover', onDragOver, \{ capture: true, passive: true \}\)/);
-  assert.match(renderer,/tree\.removeEventListener\('dragover', entry\.onDragOver, true\)/);
-  assert.match(renderer,/tree\.addEventListener\('drop', onDrop, true\)/);
-  assert.match(renderer,/tree\.addEventListener\('dragend', onDrop, true\)/);
-  const start=renderer.indexOf('const onDragOver = (event) => {');
-  const end=renderer.indexOf('const onDrop = () => {',start);
-  assert.ok(start>0&&end>start);
-  const handler=renderer.slice(start,end);
-  assert.doesNotMatch(handler,/preventDefault|stopPropagation|stopImmediatePropagation/);
-});
-test('observer cancels updates, clears wrong parent, and unhooks on unload',()=>{
-  assert.match(renderer,/clearDropTarget\(tree, entry\.box\)/);
-  assert.match(renderer,/if \(entry\?\.parent && entry\.parent !== parent\)/);
-  assert.match(renderer,/entry\.parent\.removeAttribute\('data-vh-drop-parent'\)/);
-  assert.match(renderer,/dropObservers\.delete\(tree\)/);
-  assert.match(renderer,/for \(const \[tree, entry\] of dropObservers\)\s*detachDropObserver\(tree, entry\)/);
+test('regular tree updates still detect native expand/select without drag observers',()=>{
+  assert.match(renderer,/observeTree\(tree\)/);
+  assert.match(renderer,/pruneTreeObservers\(\)/);
+  assert.doesNotMatch(renderer,/dropObservers/);
+  assert.doesNotMatch(renderer,/MutationObserver\(\(\) => requestDropUpdate/);
 });

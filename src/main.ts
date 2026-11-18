@@ -329,7 +329,7 @@ class EditorHierarchyHost {
   }
   getState(): State { return JSON.parse(JSON.stringify(this.state)); }
   async setOption(key: keyof Options, value: unknown): Promise<boolean> {
-    if (!(key === 'enabled' || key === 'guideMode' || key === 'colorSaturation' || key === 'colorBrightness' || FEATURES.includes(key as Feature))) return false;
+    if (!(key === 'enabled' || key === 'guideMode' || key === 'colorSaturation' || key === 'colorBrightness' || key === 'guideThickness' || FEATURES.includes(key as Feature))) return false;
     const next = sanitizeState({ ...this.state, options: { ...this.state.options, [key]: value } });
     // Reject malformed changes rather than quietly saving a different value.
     if (next.options[key] !== value) return false;

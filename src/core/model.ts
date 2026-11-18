@@ -12,6 +12,7 @@ export interface Options extends Record<Feature, boolean> {
   guideMode: GuideMode;
   colorSaturation: number;
   colorBrightness: number;
+  guideThickness: number;
 }
 export interface Appearance { color?: number; icon?: string; iconColor?: string; recursiveColor?: boolean; recursiveIcon?: boolean; }
 export interface Bookmark { uuid: string; name: string; }
@@ -51,7 +52,7 @@ export function isPrefabAppearanceKey(value: unknown): value is string {
 export const DEFAULT_OPTIONS: Options = {
   enabled: true, navigationBar: true, activationToggle: true,
   hierarchyLines: true, zebraStriping: true, minimalMode: false, sceneSelector: false,
-  keyboardShortcuts: true, foldOnGuideClick: true, showNodeLayers: true, colorGradientsEnabled: true, guideMode: 'tree', colorSaturation: 1, colorBrightness: 1,
+  keyboardShortcuts: true, foldOnGuideClick: true, showNodeLayers: true, colorGradientsEnabled: true, guideMode: 'tree', colorSaturation: 1, colorBrightness: 1, guideThickness: 1,
 };
 export function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
@@ -92,6 +93,7 @@ export function sanitizeState(input: unknown): State {
   if (opt.guideMode === 'tree' || opt.guideMode === 'minimal') options.guideMode = opt.guideMode;
   if (typeof opt.colorSaturation === 'number' && Number.isFinite(opt.colorSaturation)) options.colorSaturation = clamp(opt.colorSaturation, 0, 2);
   if (typeof opt.colorBrightness === 'number' && Number.isFinite(opt.colorBrightness)) options.colorBrightness = clamp(opt.colorBrightness, 0, 2);
+  if (typeof opt.guideThickness === 'number' && Number.isFinite(opt.guideThickness)) options.guideThickness = clamp(opt.guideThickness, 0.5, 4);
   const appearances: Record<string, Appearance> = Object.create(null);
   if (raw.appearances && typeof raw.appearances === 'object') for (const [id, value] of Object.entries(raw.appearances as Record<string, unknown>)) {
     if (isNodeId(id)) appearances[id] = sanitizeAppearance(value);

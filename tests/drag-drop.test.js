@@ -149,7 +149,7 @@ test('native Cocos horizontal border is untouched and actual vHierarchy vertical
   assert.match(renderer,/background-size:var\(--vh-guide-drop-sizes\) !important/);
   assert.match(renderer,/border-left-color:transparent !important/);
   assert.match(renderer,/border-bottom-color:transparent !important/);
-  assert.match(renderer,/background-size:100% 1px !important/);
+  assert.match(renderer,/background-size:100% var\(--vh-guide-thickness,1px\) !important/);
   assert.doesNotMatch(renderer,/border-left-style:dashed !important/);
   assert.match(renderer,/\.drop-box\[data-vh-node-outline='true'\]::before/);
   assert.match(renderer,/\.drop-box\[data-vh-node-outline='true'\] > \.horizontal-line \{\s*visibility:hidden !important/);
@@ -229,7 +229,7 @@ test('guide shortcuts never cancel mousedown or pointerdown required for native 
 });
 
 test('new plugin build replaces stale renderer and CSS',()=>{
-  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch43-ancestor-drop-path'/);
+  assert.match(renderer,/const BUILD_ID = '0\.1\.1-patch44-guide-thickness-setting'/);
   assert.match(renderer,/if \(w\.__vHierarchy388\.buildId === BUILD_ID\)/);
   assert.match(renderer,/w\.__vHierarchy388\.stop\(\)/);
   assert.match(renderer,/delete w\.__vHierarchy388/);
@@ -278,7 +278,7 @@ test('four-level hover paints every parent-child vertical half and the target el
   for(const item of items)item.guide.group=items;
   const nativeDropHover=new WeakMap([[tree,{row:items[3].row,y:150}]]);
   const env={state:{options:{enabled:true,hierarchyLines:true}},
-    views:items,nativeDropHover,nativeDropPaintedRows:new Map()};
+    views:items,nativeDropHover,nativeDropPaintedRows:new Map(),getGuideThickness:()=>1};
   vm.runInNewContext(renderer.slice(start,end)+'\nthis.sync=syncNativeDropPaint;',env);
 
   env.sync(box);
@@ -354,7 +354,7 @@ test('center-node outline is SOLID from nested branch to far right, excluding Lo
     guide:{index:3,result:{nodes:[null,null,null,{depth:3,offset:0,valid:true}],
       layout:{base:19,step:20}}},
   };
-  const env={NODE_OUTLINE_PROPS:[
+  const env={getGuideThickness:()=>1,NODE_OUTLINE_PROPS:[
     '--vh-node-outline-left','--vh-node-outline-top',
     '--vh-node-outline-width','--vh-node-outline-height',
   ]};
@@ -374,7 +374,7 @@ test('center-node outline is SOLID from nested branch to far right, excluding Lo
 
 test('node outline has solid border but sibling horizontal insertion stays Cocos native',()=>{
   assert.match(renderer,/\.drop-box\[data-vh-node-outline='true'\] \{\s*border-color:transparent !important/);
-  assert.match(renderer,/border:1px solid var\(--color-focus-border,#47bdf1\)/);
+  assert.match(renderer,/border:var\(--vh-guide-thickness,1px\) solid var\(--color-focus-border,#47bdf1\)/);
   assert.match(renderer,/background:none !important/);
   assert.match(renderer,/const branchX\s*=/);
   assert.match(renderer,/if \(centerHover\)\s*syncNodeOutline\(box, target, nativeRect, targetRect\)/);
@@ -383,4 +383,16 @@ test('node outline has solid border but sibling horizontal insertion stays Cocos
   assert.match(renderer,/\.content > \.tree\[hoving\] \+ \.drop-box \{\s*z-index:2 !important; pointer-events:none !important/);
   assert.doesNotMatch(renderer,/\.drop-box\[data-vh-thin-insert='true'\]/);
   assert.doesNotMatch(renderer,/\.drop-box > \.horizontal-line \{\s*translate:/);
+});
+
+
+test('thicker guide setting flows into solid guides, drag dotted segments and node outline',()=>{
+  assert.match(renderer,/Math\.max\(0\.5, Math\.min\(4, Number\.isFinite\(state\.options\.guideThickness\)/);
+  assert.match(renderer,/const thickness = getGuideThickness\(\)/);
+  assert.match(renderer,/size: \`\$\{thickness\}px/);
+  assert.match(renderer,/size: thickness \+ 'px '/);
+  assert.match(renderer,/--vh-guide-thickness': getGuideThickness\(\) \+ 'px'/);
+  assert.match(renderer,/border:var\(--vh-guide-thickness,1px\) solid var\(--color-focus-border,#47bdf1\)/);
+  assert.doesNotMatch(renderer,/\.drop-box > \.horizontal-line \{\s*translate:/);
+  assert.doesNotMatch(renderer,/addEventListener\('drop'/);
 });

@@ -131,6 +131,22 @@ test('palette settings expose live preview and persist gradient/saturation/brigh
   assert.match(renderer,/updatePreview\(\)/);
 });
 
+test('hierarchy line thickness slider displays px preview and persists through set-option',()=>{
+  assert.match(renderer,/lineSlider\.type = 'range'/);
+  assert.match(renderer,/lineSlider\.min = '0\.5'/);
+  assert.match(renderer,/lineSlider\.max = '4'/);
+  assert.match(renderer,/lineSlider\.step = '0\.5'/);
+  assert.match(renderer,/Hierarchy line thickness/);
+  assert.match(renderer,/lineSlider\.addEventListener\('input', updateLinePreview\)/);
+  assert.match(renderer,/lineSlider\.addEventListener\('change'/);
+  assert.match(renderer,/set-option', 'guideThickness', Number\(lineSlider\.value\)/);
+  assert.match(renderer,/--vh-guide-thickness/);
+  assert.match(renderer,/--vh-preview-thickness/);
+  assert.match(renderer,/size: \`\$\{thickness\}px/);
+  assert.match(renderer,/Math\.max\(1\.5, thickness\)/);
+  assert.match(renderer,/tree\.style\.removeProperty\('--vh-guide-thickness'\)/);
+});
+
 test('Google icon palette uses searchable allowlisted catalog with independent tint controls',()=>{
   assert.match(renderer,/GOOGLE_MATERIAL_CSS = 'https:\/\/fonts\.googleapis\.com\/css2\?/);
   assert.match(renderer,/setMaterialSymbols\(data\)/);

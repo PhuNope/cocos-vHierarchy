@@ -16,6 +16,18 @@ test('only known settings survive untrusted user configuration',()=>{
   assert.deepEqual(s.appearances[id],{color:7,icon:'⭐'});
   assert.equal(Object.keys(s.appearances).length,1);assert.equal(s.bookmarks.length,1);
 });
+test('hierarchy line thickness is backwards compatible, finite and bounded',()=>{
+  assert.equal(sanitizeState({}).options.guideThickness,1);
+  assert.equal(sanitizeState({options:{guideThickness:0.5}}).options.guideThickness,0.5);
+  assert.equal(sanitizeState({options:{guideThickness:2.5}}).options.guideThickness,2.5);
+  assert.equal(sanitizeState({options:{guideThickness:4}}).options.guideThickness,4);
+  assert.equal(sanitizeState({options:{guideThickness:0}}).options.guideThickness,0.5);
+  assert.equal(sanitizeState({options:{guideThickness:9}}).options.guideThickness,4);
+  assert.equal(sanitizeState({options:{guideThickness:'3'}}).options.guideThickness,1);
+  assert.equal(sanitizeState({options:{guideThickness:NaN}}).options.guideThickness,1);
+  assert.equal(sanitizeState({options:{guideThickness:Infinity}}).options.guideThickness,1);
+});
+
 test('recursive appearance inherits from parent, explicit child overrides',()=>{
   const data={[id]:{color:2,icon:'📷',recursiveColor:true,recursiveIcon:true},[child]:{color:5}};
   assert.deepEqual(resolveAppearance(child,[id],data),{color:5,icon:'📷'});

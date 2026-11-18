@@ -42,6 +42,13 @@ test('can load, apply settings and persist without changing scene files',async()
   assert.equal(await main.methods.setOption('colorGradientsEnabled',false),true);
   assert.equal(await main.methods.setOption('colorSaturation',.6),true);
   assert.equal(await main.methods.setOption('colorBrightness',1.1),true);
+  assert.equal(await main.methods.setOption('guideThickness',2.5),true);
+  assert.equal(main.methods.getState().options.guideThickness,2.5);
+  assert.equal(await main.methods.setOption('guideThickness','2.5'),false);
+  assert.equal(await main.methods.setOption('guideThickness',0),false);
+  assert.equal(await main.methods.setOption('guideThickness',5),false);
+  assert.equal(await main.methods.setOption('guideThickness',Number.NaN),false);
+  assert.equal(main.methods.getState().options.guideThickness,2.5);
   assert.equal(await main.methods.setOption('colorSaturation','0.6'),false);
   assert.equal(await main.methods.setOption('zebraStriping',false),true);
   assert.equal(await main.methods.setOption('nonsense',true),false);
@@ -84,6 +91,8 @@ test('can load, apply settings and persist without changing scene files',async()
   assert.equal(saved.options.colorGradientsEnabled,false);
   assert.equal(saved.options.colorSaturation,.6);
   assert.equal(saved.options.colorBrightness,1.1);
+  assert.equal(saved.options.guideThickness,2.5);
+  assert.equal(require('../dist/core/model.js').sanitizeState(saved).options.guideThickness,2.5);
   await main.unload();
 });
 test('renderer refuses to run in preview webview',()=>{

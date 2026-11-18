@@ -5,7 +5,7 @@
  */
 (() => {
   type Flag = 'navigationBar' | 'activationToggle' | 'hierarchyLines' | 'zebraStriping' | 'minimalMode' | 'sceneSelector' | 'keyboardShortcuts' | 'foldOnGuideClick' | 'showNodeLayers' | 'colorGradientsEnabled';
-  interface Opts extends Record<Flag, boolean> { enabled: boolean; guideMode: 'tree' | 'minimal'; colorSaturation: number; colorBrightness: number; }
+  interface Opts extends Record<Flag, boolean> { enabled: boolean; guideMode: 'tree' | 'minimal'; colorSaturation: number; colorBrightness: number; guideThickness: number; }
   interface Appearance { color?: number; icon?: string; iconColor?: string; recursiveColor?: boolean; recursiveIcon?: boolean; }
   interface Bookmark { uuid: string; name: string; }
   interface CustomIcon { id: string; name: string; }
@@ -16,7 +16,7 @@
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch43-ancestor-drop-path';
+  const BUILD_ID = '0.1.1-patch44-guide-thickness-setting';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -37,6 +37,8 @@
     '--vh-guide-left', '--vh-guide-elbow-left', '--vh-guide-elbow-width'];
   const GUIDE_COLOR = 'rgba(151,166,187,.42)';
   const GUIDE_SELECTED_COLOR = 'var(--color-focus-border, #47bdf1)';
+  const getGuideThickness = ():number =>
+    Math.max(0.5,Math.min(4,Number.isFinite(state.options.guideThickness) ? state.options.guideThickness : 1));
   const OPTIONS: Array<[Flag, string]> = [
     ['navigationBar', 'Navigation bar / Bookmarks'],
     ['activationToggle', 'Active quick toggle'], ['hierarchyLines', 'Hierarchy lines'],
@@ -49,7 +51,7 @@
   const DEFAULT: State = {
     options: { enabled:true, navigationBar:true, activationToggle:true, hierarchyLines:true,
       zebraStriping:true, minimalMode:false, sceneSelector:false, keyboardShortcuts:true, foldOnGuideClick:true,
-      showNodeLayers:true, colorGradientsEnabled:true, guideMode:'tree', colorBrightness:1, colorSaturation:1 }, appearances:{}, prefabAppearances:{}, bookmarks:[], customIcons:[],
+      showNodeLayers:true, colorGradientsEnabled:true, guideMode:'tree', colorBrightness:1, colorSaturation:1, guideThickness:1 }, appearances:{}, prefabAppearances:{}, bookmarks:[], customIcons:[],
   };
   const CSS = `
     .vh-toolbar { display:flex; flex:0 0 27px; align-items:center; gap:4px; height:27px; padding:0 6px; box-sizing:border-box; border-bottom:1px solid var(--color-default-border, #3d454c); background:var(--color-normal-fill, #292e35); color:var(--color-normal-contrast,#ced7df); overflow:hidden; font-size:11px; }
@@ -100,8 +102,8 @@
     .tree-node[data-vh-elbow] > ui-drag-item.drag-item::after {
       content:''; position:absolute; left:var(--vh-guide-elbow-left,0px); top:0;
       width:var(--vh-guide-elbow-width,0px); height:50%; box-sizing:border-box;
-      border-left:1px solid rgba(151,166,187,.42);
-      border-bottom:1px solid rgba(151,166,187,.42);
+      border-left:var(--vh-guide-thickness,1px) solid rgba(151,166,187,.42);
+      border-bottom:var(--vh-guide-thickness,1px) solid rgba(151,166,187,.42);
       border-bottom-left-radius:4px; opacity:.82; pointer-events:none; user-select:none; z-index:0;
     }
     /* The node's actual selected ancestry/path is emphasized, not every
@@ -198,7 +200,7 @@
         var(--color-focus-border,#47bdf1) 0px,var(--color-focus-border,#47bdf1) 2px,
         transparent 2px,transparent 5px) !important;
       background-position:left bottom !important;
-      background-size:100% 1px !important;
+      background-size:100% var(--vh-guide-thickness,1px) !important;
       background-repeat:no-repeat !important;
     }
     /* Cocos still owns drop-box size, hit testing, drag intent and horizontal
@@ -216,7 +218,7 @@
       top:var(--vh-node-outline-top);
       width:var(--vh-node-outline-width);
       height:var(--vh-node-outline-height);
-      border:1px solid var(--color-focus-border,#47bdf1);
+      border:var(--vh-guide-thickness,1px) solid var(--color-focus-border,#47bdf1);
       box-sizing:border-box; pointer-events:none; z-index:4;
       background:none !important;
     }
@@ -362,6 +364,8 @@
     .vh-color-range { display:grid !important; grid-template-columns:78px minmax(80px, 1fr) 33px; gap:8px; align-items:center; }
     .vh-color-range > input { width:100%; min-width:0; accent-color:#6b9fd6; }
     .vh-color-value { text-align:right; font-variant-numeric:tabular-nums; color:#acbac8; }
+    .vh-guide-thickness-preview {display:flex; align-items:center; height:14px; margin:1px 0 5px; padding:0 2px;}
+    .vh-guide-thickness-preview > span {width:100%; height:var(--vh-preview-thickness,1px); background:var(--color-focus-border,#47bdf1); border-radius:2px; pointer-events:none;}
     .vh-color-preview { display:flex; gap:3px; margin:8px 0; }
     .vh-color-preview > span { flex:1; height:14px; border-radius:2px; border:1px solid #ffffff1c; }
     .vh-pop button { color:inherit; }
@@ -586,6 +590,7 @@
         ? [...entry.rails.filter(r => r.shape !== 'lower'), {level:entry.depth, shape:entry.hasNextSibling ? 'full' : 'last'} as VHierarchyGuides.Rail]
         : entry.rails;
       const paint: GuideLayer[] = [];
+      const thickness=getGuideThickness();
       for (const rail of rails) {
         const x = base + (rail.level - 0.5) * step;
         if (!(x > 1 && x < entry.indent - 1)) continue;
@@ -595,7 +600,7 @@
             ? `linear-gradient(to bottom, ${GUIDE_COLOR} 0%, ${GUIDE_COLOR} 78%, transparent 100%)`
             : `linear-gradient(${GUIDE_COLOR},${GUIDE_COLOR})`,
           position: `${x}px ${rail.shape === 'lower' ? 'bottom' : 'top'}`,
-          size:`1px ${rail.shape === 'full' ? '100%' : '50%'}`,
+          size:`${thickness}px ${rail.shape === 'full' ? '100%' : '50%'}`,
         });
       }
       // Selected vertical segments go IN FRONT of the neutral sibling rails.
@@ -605,7 +610,7 @@
         const x = base + (level - 0.5) * step;
         if (!(x > 1 && x < entry.indent - 1)) continue;
         paint.unshift({level,image:`linear-gradient(${GUIDE_SELECTED_COLOR},${GUIDE_SELECTED_COLOR})`,
-          position:`${x}px top`, size:'1.5px 100%'});
+          position:`${x}px top`, size:`${Math.max(1.5,thickness)}px 100%`});
       }
       items[i].guidePaint=paint;
       changeAttr(row,'data-vh-guide-selected', selected[i].rails.length || selected[i].elbow ? 'true' : undefined);
@@ -843,7 +848,7 @@
   const DROP_GUIDE_PROPS=['--vh-guide-drop-images','--vh-guide-drop-positions',
     '--vh-guide-drop-sizes','--vh-guide-drop-width'];
   const NODE_OUTLINE_PROPS=['--vh-node-outline-left','--vh-node-outline-top',
-    '--vh-node-outline-width','--vh-node-outline-height'];
+    '--vh-node-outline-width','--vh-node-outline-height','--vh-guide-thickness'];
   function clearNodeOutline(box:HTMLElement):void {
     if (box.hasAttribute('data-vh-node-outline')) box.removeAttribute('data-vh-node-outline');
     for (const key of NODE_OUTLINE_PROPS)
@@ -870,6 +875,7 @@
       '--vh-node-outline-top':(Math.round((top-nativeRect.top-2)*2)/2)+'px',
       '--vh-node-outline-width':(Math.round((right-left)*2)/2)+'px',
       '--vh-node-outline-height':(Math.round((bottom-top)*2)/2)+'px',
+      '--vh-guide-thickness':getGuideThickness()+'px',
     };
     for (const key of NODE_OUTLINE_PROPS)
       if (box.style.getPropertyValue(key)!==values[key])box.style.setProperty(key,values[key]);
@@ -907,6 +913,7 @@
     const rect=item.drag.getBoundingClientRect();
     const covered=new Map<number,{top:number;bottom:number}>();
     let width=entry.indent;
+    const thickness=getGuideThickness();
     for(const segment of segments){
       const x=result.layout.base+(segment.level-.5)*result.layout.step;
       // The parent row is often indented one level LESS than its child's
@@ -917,7 +924,7 @@
       if (bottom-top<.5)continue;
       const prior=covered.get(segment.level);
       covered.set(segment.level,prior?{top:Math.min(top,prior.top),bottom:Math.max(bottom,prior.bottom)}:{top,bottom});
-      width=Math.max(width,x+2);
+      width=Math.max(width,x+thickness+1);
     }
     const layers=(item.guidePaint||[]).filter(p=>!covered.has(p.level)).map(p=>({
       image:p.image,position:p.position,size:p.size,
@@ -926,7 +933,7 @@
       const x=result.layout.base+(level-.5)*result.layout.step;
       // Keep the dotted rhythm aligned with row top across nested levels.
       const from=Math.round(area.top*2)/2,to=Math.round(area.bottom*2)/2;
-      layers.unshift({image:DROP_DASH_IMAGE,position:x+'px '+from+'px',size:'1px '+(to-from)+'px'});
+      layers.unshift({image:DROP_DASH_IMAGE,position:x+'px '+from+'px',size:thickness+'px '+(to-from)+'px'});
     }
     const dashed=covered.size>0;
     if(dashed){
@@ -1137,6 +1144,14 @@
           observeTree(tree);
           clearLegacyDropPreview(tree);
           changeAttr(tree, 'data-vh-lock-gutter', state.options.enabled ? 'true' : undefined);
+          // Inherited by both the existing vertical guide and elbow. No
+          // extra DOM line; updating the setting redraws the whole tree.
+          const thicknessValue=getGuideThickness()+'px';
+          if (state.options.enabled) {
+            if (tree.style.getPropertyValue('--vh-guide-thickness')!==thicknessValue)
+              tree.style.setProperty('--vh-guide-thickness',thicknessValue);
+          } else if (tree.style.getPropertyValue('--vh-guide-thickness'))
+            tree.style.removeProperty('--vh-guide-thickness');
           changeAttr(tree, 'data-vh-quick-toggle', state.options.enabled && state.options.activationToggle ? 'true' : undefined);
           observeNativeDropPaint(tree);
           rootHost = tree.getRootNode() as Document | ShadowRoot;
@@ -1545,6 +1560,32 @@
     const modes=el('div');modes.append(el('span','','Guide style: '));
     for(const mode of ['tree','minimal'] as const) modes.append(btn(mode,mode,()=>{void req('cocos-vhierarchy','set-option','guideMode',mode).catch(e=>logError('guide mode',e));}));
     wrap.append(modes);
+    const lineControls=el('section','vh-color-controls');
+    lineControls.append(el('strong','','Hierarchy line thickness'));
+    const lineRow=el('label','vh-color-range');
+    const lineLabel=el('span','','Line width');
+    const lineSlider=el('input') as HTMLInputElement;
+    lineSlider.type='range';lineSlider.min='0.5';lineSlider.max='4';lineSlider.step='0.5';
+    lineSlider.value=String(getGuideThickness());
+    lineSlider.setAttribute('aria-label','Hierarchy line thickness');
+    const lineValue=el('span','vh-color-value',getGuideThickness().toFixed(1)+'px');
+    const linePreview=el('div','vh-guide-thickness-preview');
+    linePreview.append(el('span'));
+    const updateLinePreview=():void=>{
+      const value=Number(lineSlider.value);
+      lineValue.textContent=value.toFixed(1)+'px';
+      linePreview.style.setProperty('--vh-preview-thickness',value+'px');
+    };
+    lineSlider.addEventListener('input',updateLinePreview);
+    lineSlider.addEventListener('change',()=>{
+      updateLinePreview();
+      void req('cocos-vhierarchy','set-option','guideThickness',Number(lineSlider.value))
+        .catch(e=>logError('guide thickness',e));
+    });
+    lineRow.append(lineLabel,lineSlider,lineValue);
+    lineControls.append(lineRow,linePreview);
+    updateLinePreview();
+    wrap.append(lineControls);
     const colorControls=el('section','vh-color-controls');
     colorControls.append(el('strong','','Palette appearance'));
     const preview=el('div','vh-color-preview');
@@ -1647,6 +1688,7 @@
       for(const tree of (r as Element).querySelectorAll?.('.tree[data-vh-lock-gutter],.tree[data-vh-quick-toggle]')||[]) {
         clearLegacyDropPreview(tree as HTMLElement);
         tree.removeAttribute('data-vh-lock-gutter');
+        (tree as HTMLElement).style.removeProperty('--vh-guide-thickness');
         tree.removeAttribute('data-vh-quick-toggle');
       }
       for(const row of (r as Element).querySelectorAll?.('.tree-node')||[]){

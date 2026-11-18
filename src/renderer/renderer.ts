@@ -15,7 +15,7 @@
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch32-branch-rail';
+  const BUILD_ID = '0.1.1-patch33-horizontal-junction';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -163,21 +163,43 @@
       padding-left:var(--vh-action-gutter-width) !important;
     }
     .tree[data-vh-lock-gutter][data-vh-quick-toggle] { --vh-action-gutter-width:42px; }
-    /* The native drop marker starts on a different X than vHierarchy's
-       painted branch trunk. In Creator 3.8.8 the native marker is already
-       aligned with the 22px Lock-only gutter. ONLY the optional 20px Active
-       checkbox column needs compensating. Applying all 22/42px (Patch 31)
-       moved the dotted line ONE 20px indent past the actual guide, next to
-       the node icon. This intentionally does not touch the horizontal bar,
-       native drag-box dimensions, or drag/pointer events. */
+    /* Cocos Creator 3.8.8 draws the LONG horizontal insertion line as the
+       2px top/bottom border of .drop-box, starting at the unshifted native X.
+       Patch 32 correctly aligns the dotted child rail with vHierarchy's trunk,
+       but that border continues 20px past the rail and crosses it.
+       Preserve the native drop-box dimensions and pointer behavior; replace
+       only the drawn horizontal border with a ::before line which BEGINS at
+       exactly the same X as the dotted rail. The box stays native-controlled. */
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box {
+      --vh-drop-rail-start:0px;
       border-left-color:transparent !important;
+      border-top-color:transparent !important;
+      border-bottom-color:transparent !important;
+    }
+    .content > .tree[data-vh-lock-gutter][data-vh-quick-toggle]:not([searching]) + .drop-box {
+      --vh-drop-rail-start:20px;
+    }
+    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box::before {
+      content:'';
+      position:absolute;
+      top:-2px;
+      left:calc(var(--vh-drop-rail-start) - 1px);
+      right:-2px;
+      height:2px;
+      background:var(--color-focus-border);
+      pointer-events:none;
     }
     .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .vertical-line {
       translate:0px 0 !important;
     }
     .content > .tree[data-vh-lock-gutter][data-vh-quick-toggle]:not([searching]) + .drop-box > .vertical-line {
       translate:20px 0 !important;
+    }
+    /* Creator's .horizontal-line is a 1px-wide end cap under the dotted rail,
+       not the long insertion bar. Move that tiny cap to the same rail so it
+       does not remain as a detached blue pixel at the original marker X. */
+    .content > .tree[data-vh-lock-gutter]:not([searching]) + .drop-box > .horizontal-line {
+      translate:var(--vh-drop-rail-start) 0 !important;
     }
     /* The marker must render ABOVE our tinted and selected row backgrounds.
        Creator's default z-index:0 sits underneath the table's z-index:1. */

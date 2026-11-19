@@ -197,109 +197,117 @@ test('shortcut display uses macOS symbols or Windows keys without changing actua
   assert.match(renderer,/e\.altKey/);
 });
 
-test('A and Shift+E keydowns are handled once per press, repeated keys are consumed, and non-Hierarchy keys are ignored',()=>{
+test('window capture consumes both keydown and keyup; selected node remains safe after Vue rerenders it',()=>{
   const vm=require('node:vm');
   const start=renderer.indexOf('function listen(root) {');
   const end=renderer.indexOf('function collapseAll(',start);
-  assert.ok(start>0&&end>start,'compiled hierarchy listener present');
-  const events=new Map(),blurListeners=new Map();
-  const windowEvents={addEventListener:(name,fn)=>blurListeners.set(name,fn),
-    removeEventListener:(name)=>blurListeners.delete(name)};
+  assert.ok(start>0&&end>start,'compiled listener is present');
+  const rootEvents=new Map(),windowEvents=new Map();
+  const keyWindow={
+    addEventListener:(name,fn)=>windowEvents.set(name,fn),
+    removeEventListener:(name)=>windowEvents.delete(name),
+  };
   class MockDocument {
-    constructor(){this.defaultView=windowEvents;}
-    addEventListener(name,fn){events.set(name,fn);}
-    removeEventListener(name){events.delete(name);}
+    constructor(){
+      this.defaultView=keyWindow;
+      this.body={closest:()=>null};
+      this.documentElement={};
+    }
+    addEventListener(name,fn){rootEvents.set(name,fn);}
+    removeEventListener(name){rootEvents.delete(name);}
   }
   const root=new MockDocument();
-  const row={
-    isConnected:true,actualHover:true,
-    matches(selector){assert.equal(selector,':hover');return this.actualHover;},
-    hasAttribute(name){return name==='is-parent';},
-    getAttribute:()=>null,
-  };
-  const hovered={uuid:'node-uuid',row,drag:{querySelector:()=>({click(){}})}};
-  let toggleCalls=0,collapseCalls=0,selectionCalls=0;
+  function makeRow(selected=true,hover=true){
+    return {
+      isConnected:true,hover,
+      matches(selector){assert.equal(selector,':hover');return this.hover;},
+      hasAttribute:name=>name==='is-parent',
+      getAttribute:name=>name==='is-selected' && selected?'true':null,
+      parentElement:{contains:()=>false},
+    };
+  }
+  const row=makeRow(true,true), arrow={click(){}};
+  const hovered={uuid:'node-uuid',row,drag:{querySelector:()=>arrow}};
+  let toggleCalls=0,collapseCalls=0,selectCalls=0;
   const env={
-    Document:MockDocument,
-    boundRoots:new WeakSet(),
-    views:[hovered],
-    listRoot:{contains:r=>r===row},
-    lastHovered:hovered,
+    Document:MockDocument,boundRoots:new WeakSet(),views:[hovered],
+    listRoot:{contains:r=>r===row},lastHovered:hovered,
     state:{options:{enabled:true,keyboardShortcuts:true}},
     listeners:[],
     toggleActive:()=>{toggleCalls++;},
     collapseAll:()=>{collapseCalls++;},
-    editor:()=>({Selection:{select:()=>{selectionCalls++;}}}),
+    editor:()=>({Selection:{select:()=>{selectCalls++;}}}),
   };
   vm.runInNewContext(renderer.slice(start,end)+'\nthis.listen=listen;',env);
   env.listen(root);
-  assert.ok(events.has('keydown'));
-  assert.ok(events.has('keyup'));
+  assert.ok(windowEvents.has('keydown'),'shortcuts must register on Window, before Document');
+  assert.ok(windowEvents.has('keyup'),'keyup must be consumed too');
+  assert.equal(rootEvents.has('keydown'),false,'Document handler is too late for native capture shortcuts');
   const target={closest:selector=>selector.includes('.tree-node')?row:null};
-  function dispatch(key,opts={}){
-    const flags={prevented:0,stopped:0};
-    const k={
-      key,code:key.toLowerCase()==='e'?'KeyE':'KeyA',
+  function send(name,key,opts={}){
+    const event={
+      key,code:key.toLowerCase()==='e'?'KeyE':key.toLowerCase()==='a'?'KeyA':'Delete',
       repeat:false,defaultPrevented:false,
       altKey:false,ctrlKey:false,metaKey:false,shiftKey:false,
       target,
-      preventDefault(){flags.prevented++;},
-      stopImmediatePropagation(){flags.stopped++;},
+      prevented:0,stopped:0,
+      preventDefault(){this.prevented++;},
+      stopImmediatePropagation(){this.stopped++;},
       ...opts,
     };
-    events.get('keydown')(k);
-    return flags;
+    const handler=windowEvents.get(name);
+    assert.ok(handler,'missing '+name+' listener');
+    handler(event);
+    return event;
   }
-  let flags=dispatch('a');
-  assert.equal(toggleCalls,1);
-  assert.equal(flags.prevented,1);
-  assert.equal(flags.stopped,1);
-  flags=dispatch('a',{repeat:true});
-  assert.equal(toggleCalls,1,'OS repeat must not toggle again');
-  assert.equal(flags.prevented,1,'OS repeat must not leak to native Cocos');
-  assert.equal(flags.stopped,1);
-  flags=dispatch('a');
-  assert.equal(toggleCalls,1,'second keydown without keyup must not toggle twice');
-  events.get('keyup')({key:'a',code:'KeyA'});
-  flags=dispatch('a');
-  assert.equal(toggleCalls,2,'second deliberate press toggles active again');
-  assert.equal(flags.stopped,1);
-  events.get('keyup')({key:'a',code:'KeyA'});
-  flags=dispatch('E',{shiftKey:true});
-  assert.equal(collapseCalls,1);
-  assert.equal(flags.stopped,1);
-  flags=dispatch('E',{shiftKey:true,repeat:true});
-  assert.equal(collapseCalls,1);
-  assert.equal(flags.stopped,1);
-  events.get('keyup')({key:'E',code:'KeyE'});
-  flags=dispatch('E',{shiftKey:true});
-  assert.equal(collapseCalls,2,'second deliberate Shift+E is safe and isolated');
-  assert.equal(flags.prevented,1);
-  assert.equal(flags.stopped,1);
-  events.get('keyup')({key:'E',code:'KeyE'});
+  let event=send('keydown','a');
+  assert.equal(event.stopped,1);assert.equal(toggleCalls,1);
+  event=send('keydown','a',{repeat:true});
+  assert.equal(toggleCalls,1);assert.equal(event.stopped,1);
+  event=send('keyup','a');
+  assert.equal(event.stopped,1,'keyup must not reach Cocos native');
+  assert.equal(event.prevented,1);
 
-  // Mouse left Hierarchy: the cached lastHovered must not invoke commands
-  // or consume ordinary key events in Scene/Assets/Inspector panels.
-  row.actualHover=false;
-  flags=dispatch('a',{target:{closest:()=>null}});
+  // After first Active change, Vue can detach the hovered row and create an
+  // equivalent selected row. Keep same UUID and selection; not old DOM.
+  row.isConnected=false;row.hover=false;
+  const nextRow=makeRow(true,false);
+  const nextItem={uuid:'node-uuid',row:nextRow,drag:{querySelector:()=>arrow}};
+  env.views.splice(0,1,nextItem);
+  env.listRoot.contains=r=>r===nextRow;
+  event=send('keydown','a',{target:root.body});
+  assert.equal(event.stopped,1,'second A must not fall through to native Editor');
+  assert.equal(toggleCalls,2,'second A toggles the SAME selected node UUID');
+  event=send('keyup','a',{target:root.body});
+  assert.equal(event.stopped,1,'second keyup blocked after Vue rerender');
+
+  // Shift+E on the same selected, freshly-rendered node is also isolated.
+  event=send('keydown','E',{shiftKey:true,target:root.body});
+  assert.equal(collapseCalls,1);
+  assert.equal(event.stopped,1);
+  event=send('keyup','E',{shiftKey:true,target:root.body});
+  assert.equal(event.stopped,1);
+  event=send('keydown','E',{shiftKey:true,target:root.body});
+  assert.equal(collapseCalls,2);
+  assert.equal(event.stopped,1);
+  send('keyup','E',{shiftKey:true,target:root.body});
+
+  // Leaving Hierarchy must not consume keys or trigger mutations.
+  env.lastHovered=null;
+  nextRow.hover=false;
+  event=send('keydown','a',{target:{closest:()=>null}});
   assert.equal(toggleCalls,2);
-  assert.equal(flags.prevented,0);
-  assert.equal(flags.stopped,0);
-  row.actualHover=true;
-  flags=dispatch('a',{target:{closest:()=>null,},repeat:false});
-  assert.equal(toggleCalls,3,'actual cursor hover still supports shortcut when focus is body');
-  assert.equal(flags.prevented,1);
-  blurListeners.get('blur')();
-  flags=dispatch('a');
-  assert.equal(toggleCalls,4,'window blur clears held shortcut state');
-  flags=dispatch('Delete');
-  assert.equal(selectionCalls,0);
-  assert.equal(flags.prevented,0,'native Delete key is never hijacked');
+  assert.equal(event.stopped,0);
+  assert.equal(event.prevented,0);
+  event=send('keydown','Delete',{target:root.body});
+  assert.equal(event.stopped,0);
+  assert.equal(selectCalls,0);
+  assert.equal(windowEvents.has('blur'),true);
 
   for(const dispose of env.listeners)dispose();
-  assert.equal(events.has('keydown'),false);
-  assert.equal(events.has('keyup'),false);
-  assert.equal(blurListeners.has('blur'),false);
+  assert.equal(windowEvents.has('keydown'),false);
+  assert.equal(windowEvents.has('keyup'),false);
+  assert.equal(windowEvents.has('blur'),false);
 });
 
 test('Google icon palette uses searchable allowlisted catalog with independent tint controls',()=>{

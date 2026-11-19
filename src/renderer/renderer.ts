@@ -16,7 +16,7 @@
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch48-scoped-shortcut-safety';
+  const BUILD_ID = '0.1.1-patch49-window-shortcut-safety';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -1412,14 +1412,49 @@
       if (!item?.uuid) return;
       e.preventDefault(); e.stopImmediatePropagation(); showPalette(item,e.clientX,e.clientY);
     };
-    // Creator attaches its own global shortcuts to the main Editor window.
-    // Consuming our commands at the root (and only with an ACTUALLY hovered
-    // Hierarchy row) prevents a repeated A/Shift+E press from leaking into
-    // native key handling after a node re-renders or loses focus.
+    // Cocos Creator registers native shortcuts on the Editor window. A
+    // document-capture listener runs too late to isolate a native keybinding:
+    // intercept at WINDOW capture, before the event reaches document/rows.
     const pressedShortcutKeys=new Set<string>();
     const shortcutKeyId=(k:KeyboardEvent):string=>k.code || k.key.toLowerCase();
+    const keyDocument=root instanceof Document ? root : root.ownerDocument;
+    const keyWindow=keyDocument?.defaultView;
+    const keyboardRoot:Document|ShadowRoot|Window=keyWindow || root;
+    const isCurrent=(item:Item):boolean=>!!(item.row.isConnected &&
+      listRoot?.contains(item.row));
+    const hoveredItem=(target:Element|null):Item|null=>{
+      const row=target?.closest?.('.tree-node') as HTMLElement|null;
+      const direct=views.find(item=>item.row===row && isCurrent(item));
+      if(direct)return direct;
+      const visible=views.find(item=>isCurrent(item) && item.row.matches(':hover'));
+      if(visible)return visible;
+      // Native Hierarchy rerenders a node when 'active' changes. lastHovered
+      // then points to an old Item/row even though the SAME UUID is still
+      // selected. Restore the real row without guessing a different node.
+      const last=lastHovered;
+      const fallback=last && views.find(item=>item.uuid===last.uuid &&
+        isCurrent(item) && item.row.getAttribute('is-selected')==='true');
+      const body=keyDocument?.body,docRoot=keyDocument?.documentElement;
+      const isBodyTarget=target===body || target===docRoot || target===null;
+      if(fallback && isBodyTarget)return fallback;
+      // The keyboard may focus the Hierarchy tree (but not a particular row).
+      const isInTree=views.some(item=>item.row.parentElement?.contains(target));
+      if(isInTree){
+        const selected=views.find(item=>isCurrent(item) &&
+          item.row.getAttribute('is-selected')==='true');
+        if(selected)return selected;
+      }
+      return null;
+    };
     const keyup=(e:Event):void=>{
-      pressedShortcutKeys.delete(shortcutKeyId(e as KeyboardEvent));
+      const k=e as KeyboardEvent,id=shortcutKeyId(k);
+      if(!pressedShortcutKeys.has(id))return;
+      pressedShortcutKeys.delete(id);
+      // The original implementation only stopped keydown. Cocos can still
+      // execute a native selected-node command on KEYUP after the first Active
+      // operation has re-rendered the row.
+      k.preventDefault();
+      k.stopImmediatePropagation();
     };
     const shortcutBlur=():void=>{pressedShortcutKeys.clear();};
     const keydown=(e:Event):void=>{
@@ -1427,13 +1462,6 @@
       if(!state.options.enabled || !state.options.keyboardShortcuts || k.defaultPrevented)return;
       const target=k.target as Element|null;
       if(target?.closest?.('input,textarea,select,[contenteditable],ui-rename-input[state="rename"],.vh-pop'))return;
-      const hovered=lastHovered;
-      if(!hovered?.row.isConnected || !listRoot?.contains(hovered.row))return;
-      // mouseover caches lastHovered, even when the pointer moves to another
-      // Editor panel. Never invoke a scene mutation on that stale reference.
-      const keyTargetRow=target?.closest?.('.tree-node');
-      if(!hovered.row.matches(':hover') && keyTargetRow!==hovered.row)return;
-      if(!hovered.uuid && !hovered.row.hasAttribute('is-parent'))return;
       const key=k.key.toLowerCase();
       let action:'expand'|'active'|'collapseOthers'|'collapseAll'|'select'|null=null;
       if(!k.altKey && !k.ctrlKey && !k.metaKey && !k.shiftKey && key==='e')
@@ -1447,39 +1475,40 @@
       else if(!k.altKey && !k.ctrlKey && !k.metaKey && !k.shiftKey && key==='f')
         action='select';
       if(!action)return;
-      // Consume every recognized keydown including OS key-repeat. Previously
-      // repeat returned early without preventDefault, so Cocos could receive
-      // the same key for a native command, potentially on the selected node.
-      k.preventDefault();k.stopImmediatePropagation();
+      const item=hoveredItem(target);
+      if(!item?.uuid && !item?.row.hasAttribute('is-parent'))return;
+      // Consume keydown BEFORE any async IPC, including key-repeat. Native
+      // handlers must never receive a second, partially-handled press.
+      k.preventDefault();
+      k.stopImmediatePropagation();
       const id=shortcutKeyId(k);
       if(k.repeat || pressedShortcutKeys.has(id))return;
       pressedShortcutKeys.add(id);
       if(action==='expand'){
-        const arrow=hovered.drag.querySelector('.arrow') as HTMLElement|null;
-        if(arrow && hovered.row.hasAttribute('is-parent'))arrow.click();
+        const arrow=item.drag.querySelector('.arrow') as HTMLElement|null;
+        if(arrow && item.row.hasAttribute('is-parent'))arrow.click();
       }else if(action==='active'){
-        if(hovered.uuid)void toggleActive(hovered);
+        if(item.uuid)void toggleActive(item);
       }else if(action==='collapseOthers'){
-        collapseAll(hovered);
+        collapseAll(item);
       }else if(action==='collapseAll'){
         collapseAll();
-      }else if(action==='select' && hovered.uuid){
-        editor()?.Selection?.select?.('node',hovered.uuid);
+      }else if(action==='select' && item.uuid){
+        editor()?.Selection?.select?.('node',item.uuid);
       }
     };
     root.addEventListener('click',guideClick,true);
     root.addEventListener('mouseover',over,true);
     root.addEventListener('contextmenu',menu,true);
-    root.addEventListener('keydown',keydown,true);
-    root.addEventListener('keyup',keyup,true);
-    const keyWindow=(root instanceof Document ? root : root.ownerDocument).defaultView;
+    keyboardRoot.addEventListener('keydown',keydown,true);
+    keyboardRoot.addEventListener('keyup',keyup,true);
     keyWindow?.addEventListener('blur',shortcutBlur);
     listeners.push(()=>{
       root.removeEventListener('click',guideClick,true);
       root.removeEventListener('mouseover',over,true);
       root.removeEventListener('contextmenu',menu,true);
-      root.removeEventListener('keydown',keydown,true);
-      root.removeEventListener('keyup',keyup,true);
+      keyboardRoot.removeEventListener('keydown',keydown,true);
+      keyboardRoot.removeEventListener('keyup',keyup,true);
       keyWindow?.removeEventListener('blur',shortcutBlur);
       pressedShortcutKeys.clear();
     });

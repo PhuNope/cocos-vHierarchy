@@ -3,7 +3,7 @@ import { isMaterialIcon } from './material-catalog';
 import { CustomIcon, isCustomIcon, sanitizeCustomIcons } from './custom-icons';
 export const FEATURES = [
   'navigationBar', 'activationToggle', 'hierarchyLines',
-  'zebraStriping', 'minimalMode', 'sceneSelector', 'keyboardShortcuts', 'foldOnGuideClick', 'showNodeLayers', 'colorGradientsEnabled',
+  'zebraStriping', 'minimalMode', 'sceneSelector', 'foldOnGuideClick', 'showNodeLayers', 'colorGradientsEnabled',
 ] as const;
 export type Feature = typeof FEATURES[number];
 export type GuideMode = 'tree' | 'minimal';
@@ -52,7 +52,7 @@ export function isPrefabAppearanceKey(value: unknown): value is string {
 export const DEFAULT_OPTIONS: Options = {
   enabled: true, navigationBar: true, activationToggle: true,
   hierarchyLines: true, zebraStriping: true, minimalMode: false, sceneSelector: false,
-  keyboardShortcuts: true, foldOnGuideClick: true, showNodeLayers: true, colorGradientsEnabled: true, guideMode: 'tree', colorSaturation: 1, colorBrightness: 1, guideThickness: 1,
+  foldOnGuideClick: true, showNodeLayers: true, colorGradientsEnabled: true, guideMode: 'tree', colorSaturation: 1, colorBrightness: 1, guideThickness: 1,
 };
 export function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));

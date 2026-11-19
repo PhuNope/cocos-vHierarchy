@@ -4,7 +4,7 @@
  * Uses a reversible private DOM overlay because Cocos exposes no public per-row decorator.
  */
 (() => {
-  type Flag = 'navigationBar' | 'activationToggle' | 'hierarchyLines' | 'zebraStriping' | 'minimalMode' | 'sceneSelector' | 'keyboardShortcuts' | 'foldOnGuideClick' | 'showNodeLayers' | 'colorGradientsEnabled';
+  type Flag = 'navigationBar' | 'activationToggle' | 'hierarchyLines' | 'zebraStriping' | 'minimalMode' | 'sceneSelector' | 'foldOnGuideClick' | 'showNodeLayers' | 'colorGradientsEnabled';
   interface Opts extends Record<Flag, boolean> { enabled: boolean; guideMode: 'tree' | 'minimal'; colorSaturation: number; colorBrightness: number; guideThickness: number; }
   interface Appearance { color?: number; icon?: string; iconColor?: string; recursiveColor?: boolean; recursiveIcon?: boolean; }
   interface Bookmark { uuid: string; name: string; }
@@ -16,7 +16,7 @@
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch49-window-shortcut-safety';
+  const BUILD_ID = '0.1.1-patch50-mouse-only-palette';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -44,13 +44,13 @@
     ['activationToggle', 'Active quick toggle'], ['hierarchyLines', 'Hierarchy lines'],
     ['zebraStriping', 'Zebra striping'], ['minimalMode', 'Minimal mode'],
     ['foldOnGuideClick', 'Click hierarchy lines to collapse parent'],
-    ['sceneSelector', 'Scene selector (experimental)'], ['keyboardShortcuts', 'Keyboard shortcuts'],
+    ['sceneSelector', 'Scene selector (experimental)'],
     ['showNodeLayers', 'Show node layer next to its name'],
     ['colorGradientsEnabled', 'Use Unity-style color gradients'],
   ];
   const DEFAULT: State = {
     options: { enabled:true, navigationBar:true, activationToggle:true, hierarchyLines:true,
-      zebraStriping:true, minimalMode:false, sceneSelector:false, keyboardShortcuts:true, foldOnGuideClick:true,
+      zebraStriping:true, minimalMode:false, sceneSelector:false, foldOnGuideClick:true,
       showNodeLayers:true, colorGradientsEnabled:true, guideMode:'tree', colorBrightness:1, colorSaturation:1, guideThickness:1 }, appearances:{}, prefabAppearances:{}, bookmarks:[], customIcons:[],
   };
   const CSS = `
@@ -339,15 +339,8 @@
     .vh-settings-pop .vh-setting-shortcut {margin-left:auto; flex:0 0 auto; font:11px/1.3 Arial,sans-serif;
       white-space:nowrap; padding:2px 5px; border-radius:3px;
       border:1px solid #71809370; background:#ffffff0a; color:#b7ccdf;}
-    .vh-settings-pop .vh-shortcut-reference {margin:11px 0 8px; padding-top:9px;
-      border-top:1px solid #71809355;}
     .vh-settings-pop .vh-shortcut-head {display:flex; align-items:center;
       justify-content:space-between; gap:8px; margin:3px 0 7px;}
-    .vh-settings-pop .vh-shortcut-platform {font:11px Arial,sans-serif; color:#a5b5c4;}
-    .vh-settings-pop .vh-shortcut-row {display:grid; grid-template-columns:minmax(0,1fr) max-content;
-      align-items:center; column-gap:10px; margin:5px 0;}
-    .vh-settings-pop .vh-shortcut-action {min-width:0; color:#d4dce4;}
-    .vh-settings-pop .vh-shortcut-note {margin:7px 0; font-size:11px; color:#a9b7c6;}
     .vh-pop input[type=checkbox] { accent-color:#68a4ff; }
     .vh-grid { display:grid; grid-template-columns:repeat(8, 1fr); gap:5px; margin:7px 0;
       max-height:236px; overflow:auto; padding:4px; align-content:start; }
@@ -774,7 +767,7 @@
       if (!holder || !checkbox) {
         holder?.remove();
         holder = el('label', 'vh-active-hit');
-        holder.title = 'Enable / Disable node (A)';
+        holder.title = 'Enable / Disable node';
         checkbox = el('input', 'vh-active');
         checkbox.type = 'checkbox';
         checkbox.setAttribute('aria-label', 'Node Active');
@@ -1405,119 +1398,29 @@
       parent.drag.querySelector<HTMLElement>(':scope > .arrow')?.click();
       schedule();
     };
-    const menu = (e: Event): void => {
-      if (!(e instanceof MouseEvent) || !e.altKey || !state.options.enabled) return;
-      const row = (e.target as Element)?.closest?.('.tree-node') as HTMLElement | null;
-      const item = views.find(i => i.row===row);
-      if (!item?.uuid) return;
-      e.preventDefault(); e.stopImmediatePropagation(); showPalette(item,e.clientX,e.clientY);
-    };
-    // Cocos Creator registers native shortcuts on the Editor window. A
-    // document-capture listener runs too late to isolate a native keybinding:
-    // intercept at WINDOW capture, before the event reaches document/rows.
-    const pressedShortcutKeys=new Set<string>();
-    const shortcutKeyId=(k:KeyboardEvent):string=>k.code || k.key.toLowerCase();
-    const keyDocument=root instanceof Document ? root : root.ownerDocument;
-    const keyWindow=keyDocument?.defaultView;
-    const keyboardRoot:Document|ShadowRoot|Window=keyWindow || root;
-    const isCurrent=(item:Item):boolean=>!!(item.row.isConnected &&
-      listRoot?.contains(item.row));
-    const hoveredItem=(target:Element|null):Item|null=>{
+    // No vHierarchy keyboard handlers. The only modified-click shortcut
+    // is Ctrl + LEFT-click on a node to open the appearance Palette.
+    const paletteClick=(e:Event):void=>{
+      if(!(e instanceof MouseEvent) || e.button!==0 || !e.ctrlKey ||
+        e.altKey || e.shiftKey || e.metaKey || !state.options.enabled)return;
+      const target=e.target as Element|null;
+      if(target?.closest?.('input,textarea,select,button,[contenteditable],.vh-toolbar,.vh-pop,.vh-active-hit,ui-icon.lock,.arrow'))return;
       const row=target?.closest?.('.tree-node') as HTMLElement|null;
-      const direct=views.find(item=>item.row===row && isCurrent(item));
-      if(direct)return direct;
-      const visible=views.find(item=>isCurrent(item) && item.row.matches(':hover'));
-      if(visible)return visible;
-      // Native Hierarchy rerenders a node when 'active' changes. lastHovered
-      // then points to an old Item/row even though the SAME UUID is still
-      // selected. Restore the real row without guessing a different node.
-      const last=lastHovered;
-      const fallback=last && views.find(item=>item.uuid===last.uuid &&
-        isCurrent(item) && item.row.getAttribute('is-selected')==='true');
-      const body=keyDocument?.body,docRoot=keyDocument?.documentElement;
-      const isBodyTarget=target===body || target===docRoot || target===null;
-      if(fallback && isBodyTarget)return fallback;
-      // The keyboard may focus the Hierarchy tree (but not a particular row).
-      const isInTree=views.some(item=>item.row.parentElement?.contains(target));
-      if(isInTree){
-        const selected=views.find(item=>isCurrent(item) &&
-          item.row.getAttribute('is-selected')==='true');
-        if(selected)return selected;
-      }
-      return null;
+      const item=views.find(view=>view.row===row);
+      if(!item?.uuid || item.searching || !item.row.isConnected ||
+        !listRoot?.contains(item.row))return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      showPalette(item,e.clientX,e.clientY);
     };
-    const keyup=(e:Event):void=>{
-      const k=e as KeyboardEvent,id=shortcutKeyId(k);
-      if(!pressedShortcutKeys.has(id))return;
-      pressedShortcutKeys.delete(id);
-      // The original implementation only stopped keydown. Cocos can still
-      // execute a native selected-node command on KEYUP after the first Active
-      // operation has re-rendered the row.
-      k.preventDefault();
-      k.stopImmediatePropagation();
-    };
-    const shortcutBlur=():void=>{pressedShortcutKeys.clear();};
-    const keydown=(e:Event):void=>{
-      const k=e as KeyboardEvent;
-      if(!state.options.enabled || !state.options.keyboardShortcuts || k.defaultPrevented)return;
-      const target=k.target as Element|null;
-      if(target?.closest?.('input,textarea,select,[contenteditable],ui-rename-input[state="rename"],.vh-pop'))return;
-      const key=k.key.toLowerCase();
-      let action:'expand'|'active'|'collapseOthers'|'collapseAll'|'select'|null=null;
-      if(!k.altKey && !k.ctrlKey && !k.metaKey && !k.shiftKey && key==='e')
-        action='expand';
-      else if(!k.altKey && !k.ctrlKey && !k.metaKey && !k.shiftKey && key==='a')
-        action='active';
-      else if(!k.altKey && !k.ctrlKey && !k.metaKey && k.shiftKey && key==='e')
-        action='collapseOthers';
-      else if(!k.altKey && (k.ctrlKey || k.metaKey) && k.shiftKey && key==='e')
-        action='collapseAll';
-      else if(!k.altKey && !k.ctrlKey && !k.metaKey && !k.shiftKey && key==='f')
-        action='select';
-      if(!action)return;
-      const item=hoveredItem(target);
-      if(!item?.uuid && !item?.row.hasAttribute('is-parent'))return;
-      // Consume keydown BEFORE any async IPC, including key-repeat. Native
-      // handlers must never receive a second, partially-handled press.
-      k.preventDefault();
-      k.stopImmediatePropagation();
-      const id=shortcutKeyId(k);
-      if(k.repeat || pressedShortcutKeys.has(id))return;
-      pressedShortcutKeys.add(id);
-      if(action==='expand'){
-        const arrow=item.drag.querySelector('.arrow') as HTMLElement|null;
-        if(arrow && item.row.hasAttribute('is-parent'))arrow.click();
-      }else if(action==='active'){
-        if(item.uuid)void toggleActive(item);
-      }else if(action==='collapseOthers'){
-        collapseAll(item);
-      }else if(action==='collapseAll'){
-        collapseAll();
-      }else if(action==='select' && item.uuid){
-        editor()?.Selection?.select?.('node',item.uuid);
-      }
-    };
+    root.addEventListener('click',paletteClick,true);
     root.addEventListener('click',guideClick,true);
     root.addEventListener('mouseover',over,true);
-    root.addEventListener('contextmenu',menu,true);
-    keyboardRoot.addEventListener('keydown',keydown,true);
-    keyboardRoot.addEventListener('keyup',keyup,true);
-    keyWindow?.addEventListener('blur',shortcutBlur);
     listeners.push(()=>{
+      root.removeEventListener('click',paletteClick,true);
       root.removeEventListener('click',guideClick,true);
       root.removeEventListener('mouseover',over,true);
-      root.removeEventListener('contextmenu',menu,true);
-      keyboardRoot.removeEventListener('keydown',keydown,true);
-      keyboardRoot.removeEventListener('keyup',keyup,true);
-      keyWindow?.removeEventListener('blur',shortcutBlur);
-      pressedShortcutKeys.clear();
     });
-  }
-  function collapseAll(except?: Item): void {
-    const keep = new Set<string>();
-    if (except) { const pos=views.indexOf(except); let d=except.depth; for(let i=pos;i>=0;i--) if(views[i].depth<=d){keep.add(views[i].uuid);d=views[i].depth-1;} }
-    const open=[...views].filter(i=>i.row.getAttribute('is-expand')==='true' && !keep.has(i.uuid));
-    for (const item of open.reverse()) item.drag.querySelector<HTMLElement>('.arrow')?.click();
   }
   async function toggleActive(item: Item): Promise<void> {
     if (!item.uuid || item.node?.locked || item.node?.readonly || item.node?.isScene) return;
@@ -1761,25 +1664,19 @@
     const recursiveIcon=el('label');const iconCheck=el('input') as HTMLInputElement;iconCheck.type='checkbox';iconCheck.checked=!!current.recursiveIcon;
     iconCheck.addEventListener('change',()=>{current.recursiveIcon=iconCheck.checked;void persistAppearance(item,{...current});});
     recursiveIcon.append(iconCheck,document.createTextNode('Apply icon to descendants'));wrap.append(recursiveIcon);
-    wrap.append(el('p','vh-footer','Alt + right-click node to open this palette.'));
+    wrap.append(el('p','vh-footer','Ctrl + left-click a Hierarchy node to open this palette.'));
   }
   function showSettings(): void {
     const wrap=popup('vHierarchy · v0.1.0');
     wrap.classList.add('vh-settings-pop');
     const settingsWidth=Math.min(450,Math.max(200,window.innerWidth-24));
     wrap.style.left=Math.max(8,Math.round((window.innerWidth-settingsWidth)/2))+'px';
-    const mac=isMacShortcutPlatform(navigator.platform || navigator.userAgent || '');
     const draft={...state.options};
     let updatePreview:()=>void=()=>{};
     const master=el('label');const masterCheck=el('input') as HTMLInputElement;
     masterCheck.type='checkbox';masterCheck.checked=state.options.enabled;
     masterCheck.addEventListener('change',()=>{void req('cocos-vhierarchy','set-option','enabled',masterCheck.checked).catch(e=>logError('options',e));});
     master.append(masterCheck, document.createTextNode('Enable vHierarchy'));wrap.append(master);
-    const optionHints:Partial<Record<Flag,string>>={
-      activationToggle:shortcutLabel('toggleActive',mac),
-      keyboardShortcuts:mac ? 'E · A · ⇧E · ⌘⇧E · F' : 'E · A · Shift+E · Ctrl+Shift+E · F',
-      foldOnGuideClick:'Click line',
-    };
     for(const [name,label] of OPTIONS) {
       const line=el('label','vh-setting-row');
       const input=el('input') as HTMLInputElement;input.type='checkbox';input.checked=state.options[name];
@@ -1789,31 +1686,8 @@
       });
       const nameText=el('span','vh-setting-name',label);
       line.append(input,nameText);
-      const hint=optionHints[name];
-      if(hint){
-        const key=el('kbd','vh-setting-shortcut',hint);
-        key.title=name==='keyboardShortcuts' ? 'See shortcut reference below' :
-          name==='foldOnGuideClick' ? 'Mouse gesture, not a keyboard shortcut' :
-          'Requires Keyboard shortcuts enabled and hovered node';
-        line.append(key);
-      }
       wrap.append(line);
     }
-    const reference=el('section','vh-shortcut-reference');
-    const heading=el('div','vh-shortcut-head');
-    heading.append(el('strong','','Shortcuts'),
-      el('span','vh-shortcut-platform',mac ? 'macOS' : 'Windows / Linux'));
-    reference.append(heading);
-    for(const [description,action] of SHORTCUT_REFERENCE){
-      const row=el('div','vh-shortcut-row');
-      row.append(el('span','vh-shortcut-action',description),
-        el('kbd','vh-setting-shortcut',shortcutLabel(action,mac)));
-      reference.append(row);
-    }
-    reference.append(el('p','vh-shortcut-note',
-      'Keyboard shortcuts work while hovering a Hierarchy node, when Keyboard shortcuts is enabled. '+
-      'The palette gesture uses a mouse and does not depend on that toggle.'));
-    wrap.append(reference);
     const modes=el('div');modes.append(el('span','','Guide style: '));
     for(const mode of ['tree','minimal'] as const) modes.append(btn(mode,mode,()=>{void req('cocos-vhierarchy','set-option','guideMode',mode).catch(e=>logError('guide mode',e));}));
     wrap.append(modes);
@@ -1846,7 +1720,7 @@
     const colorControls=el('section','vh-color-controls');
     const paletteHeading=el('div','vh-shortcut-head');
     paletteHeading.append(el('strong','','Palette appearance'),
-      el('kbd','vh-setting-shortcut',shortcutLabel('openPalette',mac)));
+      el('kbd','vh-setting-shortcut','Ctrl + Left Click'));
     colorControls.append(paletteHeading);
     const preview=el('div','vh-color-preview');
     const previews=PALETTE.map(hex=>{const cell=el('span');preview.append(cell);return {hex,cell};});
@@ -1863,33 +1737,9 @@
     };
     addRange('colorSaturation','Saturation');addRange('colorBrightness','Brightness');
     colorControls.append(preview);updatePreview();
-    wrap.append(colorControls,el('p','vh-footer','Settings are saved per project. Shortcut labels adapt to your OS.'));
+    wrap.append(colorControls,el('p','vh-footer','Settings are saved per project. Ctrl + left-click a node to open its Palette.'));
     wrap.append(btn('Close','Close settings',()=>closePopup()));
   }
-  type ShortcutAction = 'toggleExpand' | 'toggleActive' | 'collapseExcept' | 'collapseAll' | 'selectNode' | 'openPalette';
-  /** Electron reports MacIntel/Win32 in navigator.platform. Detect only the
-   * presentation convention; shortcut handling remains unchanged. */
-  function isMacShortcutPlatform(platform:string):boolean {
-    return /Mac|iPhone|iPad|iPod/i.test(platform);
-  }
-  function shortcutLabel(action:ShortcutAction, mac:boolean):string {
-    switch(action) {
-      case 'toggleExpand': return 'E';
-      case 'toggleActive': return 'A';
-      case 'collapseExcept': return mac ? '⇧E' : 'Shift+E';
-      case 'collapseAll': return mac ? '⌘⇧E' : 'Ctrl+Shift+E';
-      case 'selectNode': return 'F';
-      case 'openPalette': return mac ? '⌥ + Right-click' : 'Alt + Right-click';
-    }
-  }
-  const SHORTCUT_REFERENCE:ReadonlyArray<readonly [string,ShortcutAction]> = [
-    ['Expand / collapse hovered node','toggleExpand'],
-    ['Toggle Active on hovered node','toggleActive'],
-    ['Collapse others (keep hovered path)','collapseExcept'],
-    ['Collapse entire hierarchy','collapseAll'],
-    ['Select hovered node','selectNode'],
-    ['Open appearance palette','openPalette'],
-  ];
   async function showScenes(): Promise<void> {
     const wrap=popup('Open Scene');
     wrap.append(el('p','vh-footer','Only imported .scene assets under db://assets. Save changes before switching.'));

@@ -147,169 +147,81 @@ test('hierarchy line thickness slider displays px preview and persists through s
   assert.match(renderer,/tree\.style\.removeProperty\('--vh-guide-thickness'\)/);
 });
 
-test('settings displays only implemented shortcuts next to relevant options and has a complete legend',()=>{
-  assert.match(renderer,/wrap\.classList\.add\('vh-settings-pop'\)/);
-  assert.match(renderer,/mac\s*=\s*isMacShortcutPlatform\(navigator\.platform \|\| navigator\.userAgent \|\| ''\)/);
-  assert.match(renderer,/activationToggle:\s*shortcutLabel\('toggleActive',\s*mac\)/);
-  assert.match(renderer,/keyboardShortcuts:\s*mac\s*\?\s*'E · A · ⇧E · ⌘⇧E · F'\s*:\s*'E · A · Shift\+E · Ctrl\+Shift\+E · F'/);
-  assert.match(renderer,/foldOnGuideClick:\s*'Click line'/);
-  assert.match(renderer,/const hint\s*=\s*optionHints\[name\]/);
-  assert.match(renderer,/if\s*\(hint\)\s*\{/);
-  assert.match(renderer,/el\('kbd', 'vh-setting-shortcut', hint\)/);
-  assert.match(renderer,/SHORTCUT_REFERENCE/);
-  assert.match(renderer,/for \(const \[description, action\] of SHORTCUT_REFERENCE\)/);
-  assert.match(renderer,/shortcutLabel\(action, mac\)/);
-  assert.match(renderer,/shortcutLabel\('openPalette', mac\)/);
-  assert.match(renderer,/Settings are saved per project\. Shortcut labels adapt to your OS\./);
-  // Options with no assigned shortcut must not invent one.
-  assert.doesNotMatch(renderer,/zebraStriping:\s*shortcutLabel/);
-  assert.doesNotMatch(renderer,/colorGradientsEnabled:\s*shortcutLabel/);
+test('keyboard shortcuts and their settings are removed; only Ctrl-left-click palette hint remains',()=>{
+  assert.doesNotMatch(renderer,/keyboardShortcuts|pressedShortcutKeys|shortcutKeyId|SHORTCUT_REFERENCE|shortcutLabel/);
+  assert.doesNotMatch(renderer,/keyboardRoot\.addEventListener|root\.addEventListener\('keydown'/);
+  assert.doesNotMatch(renderer,/root\.addEventListener\('keyup'|root\.addEventListener\('contextmenu'/);
+  assert.doesNotMatch(renderer,/function collapseAll\(/);
+  assert.doesNotMatch(renderer,/Alt \+ right-click node/);
+  assert.match(renderer,/Ctrl \+ left-click a Hierarchy node to open this palette/);
+  assert.match(renderer,/Ctrl \+ Left Click/);
+  assert.match(renderer,/root\.addEventListener\('click', paletteClick, true\)/);
+  assert.match(renderer,/root\.removeEventListener\('click', paletteClick, true\)/);
+  // The native mouse-only fold interaction and on-row Active checkbox survive.
+  assert.match(renderer,/root\.addEventListener\('click', guideClick, true\)/);
+  assert.match(renderer,/checkbox\.addEventListener\('change'/);
 });
-
-test('shortcut display uses macOS symbols or Windows keys without changing actual keyboard handlers',()=>{
-  const vm=require('node:vm');
-  const start=renderer.indexOf('function isMacShortcutPlatform(platform) {');
-  const end=renderer.indexOf('const SHORTCUT_REFERENCE =',start);
-  assert.ok(start>0 && end>start,'compiled shortcut formatter must be available');
-  const ctx={};
-  vm.runInNewContext(renderer.slice(start,end)+
-    '\nthis.isMac=isMacShortcutPlatform;this.label=shortcutLabel;',ctx);
-  assert.equal(ctx.isMac('MacIntel'),true);
-  assert.equal(ctx.isMac('MacPPC'),true);
-  assert.equal(ctx.isMac('Win32'),false);
-  assert.equal(ctx.isMac('Linux x86_64'),false);
-  const cases={
-    toggleExpand:['E','E'],
-    toggleActive:['A','A'],
-    collapseExcept:['⇧E','Shift+E'],
-    collapseAll:['⌘⇧E','Ctrl+Shift+E'],
-    selectNode:['F','F'],
-    openPalette:['⌥ + Right-click','Alt + Right-click'],
-  };
-  for(const [action,[mac,win]] of Object.entries(cases)){
-    assert.equal(ctx.label(action,true),mac);
-    assert.equal(ctx.label(action,false),win);
-  }
-  // The backend key handlers remain the source of truth for shortcuts.
-  assert.match(renderer,/k\.shiftKey && key === 'e'/);
-  assert.match(renderer,/\(k\.ctrlKey \|\| k\.metaKey\) && k\.shiftKey/);
-  assert.match(renderer,/key === 'f'/);
-  assert.match(renderer,/e\.altKey/);
-});
-
-test('window capture consumes both keydown and keyup; selected node remains safe after Vue rerenders it',()=>{
+test('Ctrl + LEFT click opens Palette once, ordinary click and other modifiers remain native',()=>{
   const vm=require('node:vm');
   const start=renderer.indexOf('function listen(root) {');
-  const end=renderer.indexOf('function collapseAll(',start);
-  assert.ok(start>0&&end>start,'compiled listener is present');
-  const rootEvents=new Map(),windowEvents=new Map();
-  const keyWindow={
-    addEventListener:(name,fn)=>windowEvents.set(name,fn),
-    removeEventListener:(name)=>windowEvents.delete(name),
+  const end=renderer.indexOf('async function toggleActive(',start);
+  assert.ok(start>0&&end>start);
+  const listeners=new Map();
+  const root={
+    addEventListener:(name,fn)=>{const current=listeners.get(name)||[];current.push(fn);listeners.set(name,current);},
+    removeEventListener:(name,fn)=>{
+      const current=listeners.get(name)||[];listeners.set(name,current.filter(x=>x!==fn));
+    },
   };
-  class MockDocument {
-    constructor(){
-      this.defaultView=keyWindow;
-      this.body={closest:()=>null};
-      this.documentElement={};
+  class MouseEvent {
+    constructor({button=0,ctrlKey=false,altKey=false,shiftKey=false,metaKey=false,target}={}){
+      Object.assign(this,{button,ctrlKey,altKey,shiftKey,metaKey,target,clientX:152,clientY:191,prevented:0,stopped:0});
     }
-    addEventListener(name,fn){rootEvents.set(name,fn);}
-    removeEventListener(name){rootEvents.delete(name);}
+    preventDefault(){this.prevented++;}
+    stopImmediatePropagation(){this.stopped++;}
   }
-  const root=new MockDocument();
-  function makeRow(selected=true,hover=true){
-    return {
-      isConnected:true,hover,
-      matches(selector){assert.equal(selector,':hover');return this.hover;},
-      hasAttribute:name=>name==='is-parent',
-      getAttribute:name=>name==='is-selected' && selected?'true':null,
-      parentElement:{contains:()=>false},
-    };
-  }
-  const row=makeRow(true,true), arrow={click(){}};
-  const hovered={uuid:'node-uuid',row,drag:{querySelector:()=>arrow}};
-  let toggleCalls=0,collapseCalls=0,selectCalls=0;
+  const row={isConnected:true};
+  const item={uuid:'scene-node-uuid',searching:false,row};
   const env={
-    Document:MockDocument,boundRoots:new WeakSet(),views:[hovered],
-    listRoot:{contains:r=>r===row},lastHovered:hovered,
-    state:{options:{enabled:true,keyboardShortcuts:true}},
-    listeners:[],
-    toggleActive:()=>{toggleCalls++;},
-    collapseAll:()=>{collapseCalls++;},
-    editor:()=>({Selection:{select:()=>{selectCalls++;}}}),
+    MouseEvent,views:[item],boundRoots:new WeakSet(),listeners:[],
+    listRoot:{contains:r=>r===row},
+    state:{options:{enabled:true,foldOnGuideClick:false}},
+    lastHovered:item,showPalette:(target,x,y)=>opened.push([target.uuid,x,y]),
   };
+  const opened=[];
   vm.runInNewContext(renderer.slice(start,end)+'\nthis.listen=listen;',env);
   env.listen(root);
-  assert.ok(windowEvents.has('keydown'),'shortcuts must register on Window, before Document');
-  assert.ok(windowEvents.has('keyup'),'keyup must be consumed too');
-  assert.equal(rootEvents.has('keydown'),false,'Document handler is too late for native capture shortcuts');
-  const target={closest:selector=>selector.includes('.tree-node')?row:null};
-  function send(name,key,opts={}){
-    const event={
-      key,code:key.toLowerCase()==='e'?'KeyE':key.toLowerCase()==='a'?'KeyA':'Delete',
-      repeat:false,defaultPrevented:false,
-      altKey:false,ctrlKey:false,metaKey:false,shiftKey:false,
-      target,
-      prevented:0,stopped:0,
-      preventDefault(){this.prevented++;},
-      stopImmediatePropagation(){this.stopped++;},
-      ...opts,
-    };
-    const handler=windowEvents.get(name);
-    assert.ok(handler,'missing '+name+' listener');
-    handler(event);
-    return event;
+  assert.equal(listeners.has('keydown'),false);
+  assert.equal(listeners.has('keyup'),false);
+  assert.equal(listeners.has('contextmenu'),false);
+  const target={
+    closest(selector){return selector==='.tree-node'?row:null;},
+  };
+  const click=(args={})=>{
+    const e=new MouseEvent({target,ctrlKey:true,...args});
+    // simulate capture listeners until the event is consumed
+    for(const fn of listeners.get('click')||[]){
+      fn(e);if(e.stopped)break;
+    }
+    return e;
+  };
+  let e=click();
+  assert.equal(e.prevented,1);assert.equal(e.stopped,1);
+  assert.equal(opened.length,1);assert.deepEqual(opened[0],['scene-node-uuid',152,191]);
+  e=click();
+  assert.equal(e.stopped,1);
+  assert.equal(opened.length,2,'repeated Ctrl-left click opens panel without touching scene commands');
+  for(const options of [{ctrlKey:false},{button:2},{shiftKey:true},{altKey:true},{metaKey:true}]){
+    click(options);
   }
-  let event=send('keydown','a');
-  assert.equal(event.stopped,1);assert.equal(toggleCalls,1);
-  event=send('keydown','a',{repeat:true});
-  assert.equal(toggleCalls,1);assert.equal(event.stopped,1);
-  event=send('keyup','a');
-  assert.equal(event.stopped,1,'keyup must not reach Cocos native');
-  assert.equal(event.prevented,1);
-
-  // After first Active change, Vue can detach the hovered row and create an
-  // equivalent selected row. Keep same UUID and selection; not old DOM.
-  row.isConnected=false;row.hover=false;
-  const nextRow=makeRow(true,false);
-  const nextItem={uuid:'node-uuid',row:nextRow,drag:{querySelector:()=>arrow}};
-  env.views.splice(0,1,nextItem);
-  env.listRoot.contains=r=>r===nextRow;
-  event=send('keydown','a',{target:root.body});
-  assert.equal(event.stopped,1,'second A must not fall through to native Editor');
-  assert.equal(toggleCalls,2,'second A toggles the SAME selected node UUID');
-  event=send('keyup','a',{target:root.body});
-  assert.equal(event.stopped,1,'second keyup blocked after Vue rerender');
-
-  // Shift+E on the same selected, freshly-rendered node is also isolated.
-  event=send('keydown','E',{shiftKey:true,target:root.body});
-  assert.equal(collapseCalls,1);
-  assert.equal(event.stopped,1);
-  event=send('keyup','E',{shiftKey:true,target:root.body});
-  assert.equal(event.stopped,1);
-  event=send('keydown','E',{shiftKey:true,target:root.body});
-  assert.equal(collapseCalls,2);
-  assert.equal(event.stopped,1);
-  send('keyup','E',{shiftKey:true,target:root.body});
-
-  // Leaving Hierarchy must not consume keys or trigger mutations.
-  env.lastHovered=null;
-  nextRow.hover=false;
-  event=send('keydown','a',{target:{closest:()=>null}});
-  assert.equal(toggleCalls,2);
-  assert.equal(event.stopped,0);
-  assert.equal(event.prevented,0);
-  event=send('keydown','Delete',{target:root.body});
-  assert.equal(event.stopped,0);
-  assert.equal(selectCalls,0);
-  assert.equal(windowEvents.has('blur'),true);
-
+  assert.equal(opened.length,2,'other gestures are left to Cocos');
+  item.row.isConnected=false;
+  click();
+  assert.equal(opened.length,2,'detached node is not acted upon');
   for(const dispose of env.listeners)dispose();
-  assert.equal(windowEvents.has('keydown'),false);
-  assert.equal(windowEvents.has('keyup'),false);
-  assert.equal(windowEvents.has('blur'),false);
+  assert.equal((listeners.get('click')||[]).length,0);
+  assert.equal((listeners.get('mouseover')||[]).length,0);
 });
-
 test('Google icon palette uses searchable allowlisted catalog with independent tint controls',()=>{
   assert.match(renderer,/GOOGLE_MATERIAL_CSS = 'https:\/\/fonts\.googleapis\.com\/css2\?/);
   assert.match(renderer,/setMaterialSymbols\(data\)/);

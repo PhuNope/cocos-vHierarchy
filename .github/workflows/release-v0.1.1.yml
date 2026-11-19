@@ -1,0 +1,77 @@
+name: Publish vHierarchy 0.1.1
+
+# This workflow is intentionally enabled only by the first approved commit of
+# this workflow file. Later source pushes DO NOT automatically publish a release.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-v0.1.1.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.repository == 'PhuNope/cocos-vHierarchy' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout approved release source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Typecheck, test, and package v0.1.1
+        run: |
+          npm install --no-audit --no-fund
+          npm run typecheck
+          npm test
+          npm run pack:local
+          mv vHierarchy-0.1.1-test.zip vHierarchy-0.1.1.zip
+      - name: Verify release ZIP imports directly (no nested ZIP)
+        run: |
+          python3 - <<'PY'
+          import json
+          from zipfile import ZipFile, BadZipFile
+          name='vHierarchy-0.1.1.zip'
+          with ZipFile(name) as z:
+              names=z.namelist()
+              assert len(names)>20, 'Incomplete extension ZIP'
+              assert all(p.startswith('cocos-vhierarchy/') for p in names), 'Unexpected ZIP root'
+              assert not any(p.lower().endswith('.zip') for p in names), 'Nested ZIP detected'
+              assert 'cocos-vhierarchy/package.json' in names, 'Missing extension manifest'
+              assert 'cocos-vhierarchy/dist/main.js' in names, 'Missing main entry'
+              assert 'cocos-vhierarchy/dist/renderer/renderer.js' in names, 'Missing renderer'
+              pkg=json.loads(z.read('cocos-vhierarchy/package.json'))
+              assert pkg['name']=='cocos-vhierarchy', 'Wrong extension name'
+              assert pkg['version']=='0.1.1', 'Wrong extension version'
+              assert 'patch50-mouse-only-palette' in z.read('cocos-vhierarchy/dist/renderer/renderer.js').decode('utf-8'), 'Wrong packaged patch'
+          print('Direct-import ZIP verified:',len(names),'files')
+          PY
+      - name: Create approved tag and GitHub Release with direct-import ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v0.1.1 >/dev/null 2>&1; then
+            echo 'Release v0.1.1 already exists; not overwriting.'
+            exit 0
+          fi
+          if gh api repos/${{ github.repository }}/git/ref/tags/v0.1.1 >/dev/null 2>&1; then
+            echo 'Tag v0.1.1 already exists without a Release; refusing to overwrite.'
+            exit 1
+          fi
+          gh release create v0.1.1 \
+            ./vHierarchy-0.1.1.zip \
+            --title 'vHierarchy 0.1.1' \
+            --notes-file .github/release-notes/v0.1.1.md \
+            --target "$GITHUB_SHA" \
+            --latest
+      - name: Verify published release asset checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p published-asset
+          gh release download v0.1.1 --pattern 'vHierarchy-0.1.1.zip' --dir published-asset
+          cmp -s vHierarchy-0.1.1.zip published-asset/vHierarchy-0.1.1.zip
+          echo 'Published ZIP matches verified direct-import ZIP byte-for-byte.'

@@ -147,6 +147,56 @@ test('hierarchy line thickness slider displays px preview and persists through s
   assert.match(renderer,/tree\.style\.removeProperty\('--vh-guide-thickness'\)/);
 });
 
+test('settings displays only implemented shortcuts next to relevant options and has a complete legend',()=>{
+  assert.match(renderer,/wrap\.classList\.add\('vh-settings-pop'\)/);
+  assert.match(renderer,/mac\s*=\s*isMacShortcutPlatform\(navigator\.platform \|\| navigator\.userAgent \|\| ''\)/);
+  assert.match(renderer,/activationToggle:\s*shortcutLabel\('toggleActive',mac\)/);
+  assert.match(renderer,/keyboardShortcuts:\s*mac \? 'E · A · ⇧E · ⌘⇧E · F' : 'E · A · Shift\+E · Ctrl\+Shift\+E · F'/);
+  assert.match(renderer,/foldOnGuideClick:\s*'Click line'/);
+  assert.match(renderer,/const hint\s*=\s*optionHints\[name\]/);
+  assert.match(renderer,/if\s*\(hint\)\s*\{/);
+  assert.match(renderer,/el\('kbd', 'vh-setting-shortcut', hint\)/);
+  assert.match(renderer,/SHORTCUT_REFERENCE/);
+  assert.match(renderer,/for \(const \[description, action\] of SHORTCUT_REFERENCE\)/);
+  assert.match(renderer,/shortcutLabel\(action, mac\)/);
+  assert.match(renderer,/shortcutLabel\('openPalette', mac\)/);
+  assert.match(renderer,/Settings are saved per project\. Shortcut labels adapt to your OS\./);
+  // Options with no assigned shortcut must not invent one.
+  assert.doesNotMatch(renderer,/zebraStriping:\s*shortcutLabel/);
+  assert.doesNotMatch(renderer,/colorGradientsEnabled:\s*shortcutLabel/);
+});
+
+test('shortcut display uses macOS symbols or Windows keys without changing actual keyboard handlers',()=>{
+  const vm=require('node:vm');
+  const start=renderer.indexOf('function isMacShortcutPlatform(platform) {');
+  const end=renderer.indexOf('const SHORTCUT_REFERENCE =',start);
+  assert.ok(start>0 && end>start,'compiled shortcut formatter must be available');
+  const ctx={};
+  vm.runInNewContext(renderer.slice(start,end)+
+    '\nthis.isMac=isMacShortcutPlatform;this.label=shortcutLabel;',ctx);
+  assert.equal(ctx.isMac('MacIntel'),true);
+  assert.equal(ctx.isMac('MacPPC'),true);
+  assert.equal(ctx.isMac('Win32'),false);
+  assert.equal(ctx.isMac('Linux x86_64'),false);
+  const cases={
+    toggleExpand:['E','E'],
+    toggleActive:['A','A'],
+    collapseExcept:['⇧E','Shift+E'],
+    collapseAll:['⌘⇧E','Ctrl+Shift+E'],
+    selectNode:['F','F'],
+    openPalette:['⌥ + Right-click','Alt + Right-click'],
+  };
+  for(const [action,[mac,win]] of Object.entries(cases)){
+    assert.equal(ctx.label(action,true),mac);
+    assert.equal(ctx.label(action,false),win);
+  }
+  // The backend key handlers remain the source of truth for shortcuts.
+  assert.match(renderer,/k\.shiftKey && k\.key\.toLowerCase\(\) === 'e'/);
+  assert.match(renderer,/\(k\.ctrlKey \|\| k\.metaKey\) && k\.shiftKey/);
+  assert.match(renderer,/k\.key\.toLowerCase\(\) === 'f'/);
+  assert.match(renderer,/e\.altKey/);
+});
+
 test('Google icon palette uses searchable allowlisted catalog with independent tint controls',()=>{
   assert.match(renderer,/GOOGLE_MATERIAL_CSS = 'https:\/\/fonts\.googleapis\.com\/css2\?/);
   assert.match(renderer,/setMaterialSymbols\(data\)/);

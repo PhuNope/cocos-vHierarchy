@@ -16,7 +16,7 @@
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch46-native-drop-intent';
+  const BUILD_ID = '0.1.1-patch47-platform-shortcut-hints';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -331,6 +331,23 @@
     .vh-scene-status { font-size:11px; color:#a8b4c1; white-space:normal; }
     .vh-scene-status[data-error='true'] { color:#f2a5a5; }
     .vh-pop label { display:flex; gap:5px; align-items:center; margin:5px 0; cursor:pointer; }
+    /* Settings-only layout; other Palette popups keep their compact width. */
+    .vh-pop.vh-settings-pop {width:min(450px,calc(100vw - 24px)); min-width:0;
+      max-width:calc(100vw - 24px); box-sizing:border-box;}
+    .vh-settings-pop .vh-setting-row {display:flex; align-items:center; gap:7px; min-height:23px;}
+    .vh-settings-pop .vh-setting-name {flex:1 1 auto; min-width:0;}
+    .vh-settings-pop .vh-setting-shortcut {margin-left:auto; flex:0 0 auto; font:11px/1.3 Arial,sans-serif;
+      white-space:nowrap; padding:2px 5px; border-radius:3px;
+      border:1px solid #71809370; background:#ffffff0a; color:#b7ccdf;}
+    .vh-settings-pop .vh-shortcut-reference {margin:11px 0 8px; padding-top:9px;
+      border-top:1px solid #71809355;}
+    .vh-settings-pop .vh-shortcut-head {display:flex; align-items:center;
+      justify-content:space-between; gap:8px; margin:3px 0 7px;}
+    .vh-settings-pop .vh-shortcut-platform {font:11px Arial,sans-serif; color:#a5b5c4;}
+    .vh-settings-pop .vh-shortcut-row {display:grid; grid-template-columns:minmax(0,1fr) max-content;
+      align-items:center; column-gap:10px; margin:5px 0;}
+    .vh-settings-pop .vh-shortcut-action {min-width:0; color:#d4dce4;}
+    .vh-settings-pop .vh-shortcut-note {margin:7px 0; font-size:11px; color:#a9b7c6;}
     .vh-pop input[type=checkbox] { accent-color:#68a4ff; }
     .vh-grid { display:grid; grid-template-columns:repeat(8, 1fr); gap:5px; margin:7px 0;
       max-height:236px; overflow:auto; padding:4px; align-content:start; }
@@ -1670,22 +1687,81 @@
     recursiveIcon.append(iconCheck,document.createTextNode('Apply icon to descendants'));wrap.append(recursiveIcon);
     wrap.append(el('p','vh-footer','Alt + right-click node to open this palette.'));
   }
+  type ShortcutAction = 'toggleExpand' | 'toggleActive' | 'collapseExcept' | 'collapseAll' | 'selectNode' | 'openPalette';
+  /** Electron reports MacIntel/Win32 in navigator.platform. Detect only the
+   * presentation convention; shortcut handling remains unchanged. */
+  function isMacShortcutPlatform(platform:string):boolean {
+    return /Mac|iPhone|iPad|iPod/i.test(platform);
+  }
+  function shortcutLabel(action:ShortcutAction, mac:boolean):string {
+    switch(action) {
+      case 'toggleExpand': return 'E';
+      case 'toggleActive': return 'A';
+      case 'collapseExcept': return mac ? '⇧E' : 'Shift+E';
+      case 'collapseAll': return mac ? '⌘⇧E' : 'Ctrl+Shift+E';
+      case 'selectNode': return 'F';
+      case 'openPalette': return mac ? '⌥ + Right-click' : 'Alt + Right-click';
+    }
+  }
+  const SHORTCUT_REFERENCE:ReadonlyArray<readonly [string,ShortcutAction]> = [
+    ['Expand / collapse hovered node','toggleExpand'],
+    ['Toggle Active on hovered node','toggleActive'],
+    ['Collapse others (keep hovered path)','collapseExcept'],
+    ['Collapse entire hierarchy','collapseAll'],
+    ['Select hovered node','selectNode'],
+    ['Open appearance palette','openPalette'],
+  ];
   function showSettings(): void {
     const wrap=popup('vHierarchy · v0.1.0');
+    wrap.classList.add('vh-settings-pop');
+    const settingsWidth=Math.min(450,Math.max(200,window.innerWidth-24));
+    wrap.style.left=Math.max(8,Math.round((window.innerWidth-settingsWidth)/2))+'px';
+    const mac=isMacShortcutPlatform(navigator.platform || navigator.userAgent || '');
     const draft={...state.options};
     let updatePreview:()=>void=()=>{};
     const master=el('label');const masterCheck=el('input') as HTMLInputElement;
     masterCheck.type='checkbox';masterCheck.checked=state.options.enabled;
     masterCheck.addEventListener('change',()=>{void req('cocos-vhierarchy','set-option','enabled',masterCheck.checked).catch(e=>logError('options',e));});
     master.append(masterCheck, document.createTextNode('Enable vHierarchy'));wrap.append(master);
+    const optionHints:Partial<Record<Flag,string>>={
+      activationToggle:shortcutLabel('toggleActive',mac),
+      keyboardShortcuts:mac ? 'E · A · ⇧E · ⌘⇧E · F' : 'E · A · Shift+E · Ctrl+Shift+E · F',
+      foldOnGuideClick:'Click line',
+    };
     for(const [name,label] of OPTIONS) {
-      const line=el('label'); const input=el('input') as HTMLInputElement;input.type='checkbox';input.checked=state.options[name];
+      const line=el('label','vh-setting-row');
+      const input=el('input') as HTMLInputElement;input.type='checkbox';input.checked=state.options[name];
       input.addEventListener('change',()=>{
         if(name==='colorGradientsEnabled'){draft.colorGradientsEnabled=input.checked;updatePreview();}
         void req('cocos-vhierarchy','set-option',name,input.checked).catch(e=>logError('options',e));
       });
-      line.append(input,document.createTextNode(label));wrap.append(line);
+      const nameText=el('span','vh-setting-name',label);
+      line.append(input,nameText);
+      const hint=optionHints[name];
+      if(hint){
+        const key=el('kbd','vh-setting-shortcut',hint);
+        key.title=name==='keyboardShortcuts' ? 'See shortcut reference below' :
+          name==='foldOnGuideClick' ? 'Mouse gesture, not a keyboard shortcut' :
+          'Requires Keyboard shortcuts enabled and hovered node';
+        line.append(key);
+      }
+      wrap.append(line);
     }
+    const reference=el('section','vh-shortcut-reference');
+    const heading=el('div','vh-shortcut-head');
+    heading.append(el('strong','','Shortcuts'),
+      el('span','vh-shortcut-platform',mac ? 'macOS' : 'Windows / Linux'));
+    reference.append(heading);
+    for(const [description,action] of SHORTCUT_REFERENCE){
+      const row=el('div','vh-shortcut-row');
+      row.append(el('span','vh-shortcut-action',description),
+        el('kbd','vh-setting-shortcut',shortcutLabel(action,mac)));
+      reference.append(row);
+    }
+    reference.append(el('p','vh-shortcut-note',
+      'Keyboard shortcuts work while hovering a Hierarchy node, when Keyboard shortcuts is enabled. '+
+      'The palette gesture uses a mouse and does not depend on that toggle.'));
+    wrap.append(reference);
     const modes=el('div');modes.append(el('span','','Guide style: '));
     for(const mode of ['tree','minimal'] as const) modes.append(btn(mode,mode,()=>{void req('cocos-vhierarchy','set-option','guideMode',mode).catch(e=>logError('guide mode',e));}));
     wrap.append(modes);
@@ -1716,7 +1792,10 @@
     updateLinePreview();
     wrap.append(lineControls);
     const colorControls=el('section','vh-color-controls');
-    colorControls.append(el('strong','','Palette appearance'));
+    const paletteHeading=el('div','vh-shortcut-head');
+    paletteHeading.append(el('strong','','Palette appearance'),
+      el('kbd','vh-setting-shortcut',shortcutLabel('openPalette',mac)));
+    colorControls.append(paletteHeading);
     const preview=el('div','vh-color-preview');
     const previews=PALETTE.map(hex=>{const cell=el('span');preview.append(cell);return {hex,cell};});
     const theme=editorTheme();
@@ -1732,7 +1811,7 @@
     };
     addRange('colorSaturation','Saturation');addRange('colorBrightness','Brightness');
     colorControls.append(preview);updatePreview();
-    wrap.append(colorControls,el('p','vh-footer','Color/icon: Alt + right-click a Hierarchy node. Settings are saved per project.'));
+    wrap.append(colorControls,el('p','vh-footer','Settings are saved per project. Shortcut labels adapt to your OS.'));
     wrap.append(btn('Close','Close settings',()=>closePopup()));
   }
   async function showScenes(): Promise<void> {

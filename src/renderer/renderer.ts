@@ -1687,30 +1687,6 @@
     recursiveIcon.append(iconCheck,document.createTextNode('Apply icon to descendants'));wrap.append(recursiveIcon);
     wrap.append(el('p','vh-footer','Alt + right-click node to open this palette.'));
   }
-  type ShortcutAction = 'toggleExpand' | 'toggleActive' | 'collapseExcept' | 'collapseAll' | 'selectNode' | 'openPalette';
-  /** Electron reports MacIntel/Win32 in navigator.platform. Detect only the
-   * presentation convention; shortcut handling remains unchanged. */
-  function isMacShortcutPlatform(platform:string):boolean {
-    return /Mac|iPhone|iPad|iPod/i.test(platform);
-  }
-  function shortcutLabel(action:ShortcutAction, mac:boolean):string {
-    switch(action) {
-      case 'toggleExpand': return 'E';
-      case 'toggleActive': return 'A';
-      case 'collapseExcept': return mac ? '⇧E' : 'Shift+E';
-      case 'collapseAll': return mac ? '⌘⇧E' : 'Ctrl+Shift+E';
-      case 'selectNode': return 'F';
-      case 'openPalette': return mac ? '⌥ + Right-click' : 'Alt + Right-click';
-    }
-  }
-  const SHORTCUT_REFERENCE:ReadonlyArray<readonly [string,ShortcutAction]> = [
-    ['Expand / collapse hovered node','toggleExpand'],
-    ['Toggle Active on hovered node','toggleActive'],
-    ['Collapse others (keep hovered path)','collapseExcept'],
-    ['Collapse entire hierarchy','collapseAll'],
-    ['Select hovered node','selectNode'],
-    ['Open appearance palette','openPalette'],
-  ];
   function showSettings(): void {
     const wrap=popup('vHierarchy · v0.1.0');
     wrap.classList.add('vh-settings-pop');
@@ -1814,6 +1790,30 @@
     wrap.append(colorControls,el('p','vh-footer','Settings are saved per project. Shortcut labels adapt to your OS.'));
     wrap.append(btn('Close','Close settings',()=>closePopup()));
   }
+  type ShortcutAction = 'toggleExpand' | 'toggleActive' | 'collapseExcept' | 'collapseAll' | 'selectNode' | 'openPalette';
+  /** Electron reports MacIntel/Win32 in navigator.platform. Detect only the
+   * presentation convention; shortcut handling remains unchanged. */
+  function isMacShortcutPlatform(platform:string):boolean {
+    return /Mac|iPhone|iPad|iPod/i.test(platform);
+  }
+  function shortcutLabel(action:ShortcutAction, mac:boolean):string {
+    switch(action) {
+      case 'toggleExpand': return 'E';
+      case 'toggleActive': return 'A';
+      case 'collapseExcept': return mac ? '⇧E' : 'Shift+E';
+      case 'collapseAll': return mac ? '⌘⇧E' : 'Ctrl+Shift+E';
+      case 'selectNode': return 'F';
+      case 'openPalette': return mac ? '⌥ + Right-click' : 'Alt + Right-click';
+    }
+  }
+  const SHORTCUT_REFERENCE:ReadonlyArray<readonly [string,ShortcutAction]> = [
+    ['Expand / collapse hovered node','toggleExpand'],
+    ['Toggle Active on hovered node','toggleActive'],
+    ['Collapse others (keep hovered path)','collapseExcept'],
+    ['Collapse entire hierarchy','collapseAll'],
+    ['Select hovered node','selectNode'],
+    ['Open appearance palette','openPalette'],
+  ];
   async function showScenes(): Promise<void> {
     const wrap=popup('Open Scene');
     wrap.append(el('p','vh-footer','Only imported .scene assets under db://assets. Save changes before switching.'));

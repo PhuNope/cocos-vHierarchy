@@ -150,8 +150,8 @@ test('hierarchy line thickness slider displays px preview and persists through s
 test('settings displays only implemented shortcuts next to relevant options and has a complete legend',()=>{
   assert.match(renderer,/wrap\.classList\.add\('vh-settings-pop'\)/);
   assert.match(renderer,/mac\s*=\s*isMacShortcutPlatform\(navigator\.platform \|\| navigator\.userAgent \|\| ''\)/);
-  assert.match(renderer,/activationToggle:\s*shortcutLabel\('toggleActive',mac\)/);
-  assert.match(renderer,/keyboardShortcuts:\s*mac \? 'E · A · ⇧E · ⌘⇧E · F' : 'E · A · Shift\+E · Ctrl\+Shift\+E · F'/);
+  assert.match(renderer,/activationToggle:\s*shortcutLabel\('toggleActive',\s*mac\)/);
+  assert.match(renderer,/keyboardShortcuts:\s*mac\s*\?\s*'E · A · ⇧E · ⌘⇧E · F'\s*:\s*'E · A · Shift\+E · Ctrl\+Shift\+E · F'/);
   assert.match(renderer,/foldOnGuideClick:\s*'Click line'/);
   assert.match(renderer,/const hint\s*=\s*optionHints\[name\]/);
   assert.match(renderer,/if\s*\(hint\)\s*\{/);

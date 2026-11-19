@@ -16,7 +16,7 @@
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch47-platform-shortcut-hints';
+  const BUILD_ID = '0.1.1-patch48-scoped-shortcut-safety';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -1412,30 +1412,77 @@
       if (!item?.uuid) return;
       e.preventDefault(); e.stopImmediatePropagation(); showPalette(item,e.clientX,e.clientY);
     };
-    const keydown = (e: Event): void => {
+    // Creator attaches its own global shortcuts to the main Editor window.
+    // Consuming our commands at the root (and only with an ACTUALLY hovered
+    // Hierarchy row) prevents a repeated A/Shift+E press from leaking into
+    // native key handling after a node re-renders or loses focus.
+    const pressedShortcutKeys=new Set<string>();
+    const shortcutKeyId=(k:KeyboardEvent):string=>k.code || k.key.toLowerCase();
+    const keyup=(e:Event):void=>{
+      pressedShortcutKeys.delete(shortcutKeyId(e as KeyboardEvent));
+    };
+    const shortcutBlur=():void=>{pressedShortcutKeys.clear();};
+    const keydown=(e:Event):void=>{
       const k=e as KeyboardEvent;
-      if (!state.options.enabled || !state.options.keyboardShortcuts || k.defaultPrevented || k.repeat) return;
-      if ((k.target as Element)?.closest?.('input,textarea,[contenteditable],ui-rename-input[state="rename"]')) return;
-      if (!lastHovered || !lastHovered.row.isConnected || !listRoot?.contains(lastHovered.row)) return;
-      if (!k.altKey && !k.ctrlKey && !k.metaKey && !k.shiftKey && k.key.toLowerCase()==='e') {
-        const arrow=lastHovered.drag.querySelector('.arrow') as HTMLElement | null;
-        if (arrow && lastHovered.row.hasAttribute('is-parent')) {k.preventDefault();k.stopPropagation(); arrow.click();}
-      } else if (!k.altKey && !k.ctrlKey && !k.metaKey && !k.shiftKey && k.key.toLowerCase()==='a') {
-        if(lastHovered.uuid) { k.preventDefault();k.stopPropagation();void toggleActive(lastHovered); }
-      } else if (!k.altKey && !k.ctrlKey && !k.metaKey && k.shiftKey && k.key.toLowerCase()==='e') {
-        k.preventDefault(); k.stopPropagation(); collapseAll(lastHovered);
-      } else if (!k.altKey && (k.ctrlKey || k.metaKey) && k.shiftKey && k.key.toLowerCase()==='e') {
-        k.preventDefault(); k.stopPropagation(); collapseAll();
-      } else if (!k.altKey && !k.ctrlKey && !k.metaKey && !k.shiftKey && k.key.toLowerCase()==='f') {
-        // Native focus command varies between Editor versions; only select reliably.
-        if(lastHovered.uuid){ k.preventDefault(); k.stopPropagation();editor()?.Selection?.select?.('node',lastHovered.uuid); }
+      if(!state.options.enabled || !state.options.keyboardShortcuts || k.defaultPrevented)return;
+      const target=k.target as Element|null;
+      if(target?.closest?.('input,textarea,select,[contenteditable],ui-rename-input[state="rename"],.vh-pop'))return;
+      const hovered=lastHovered;
+      if(!hovered?.row.isConnected || !listRoot?.contains(hovered.row))return;
+      // mouseover caches lastHovered, even when the pointer moves to another
+      // Editor panel. Never invoke a scene mutation on that stale reference.
+      const keyTargetRow=target?.closest?.('.tree-node');
+      if(!hovered.row.matches(':hover') && keyTargetRow!==hovered.row)return;
+      if(!hovered.uuid && !hovered.row.hasAttribute('is-parent'))return;
+      const key=k.key.toLowerCase();
+      let action:'expand'|'active'|'collapseOthers'|'collapseAll'|'select'|null=null;
+      if(!k.altKey && !k.ctrlKey && !k.metaKey && !k.shiftKey && key==='e')
+        action='expand';
+      else if(!k.altKey && !k.ctrlKey && !k.metaKey && !k.shiftKey && key==='a')
+        action='active';
+      else if(!k.altKey && !k.ctrlKey && !k.metaKey && k.shiftKey && key==='e')
+        action='collapseOthers';
+      else if(!k.altKey && (k.ctrlKey || k.metaKey) && k.shiftKey && key==='e')
+        action='collapseAll';
+      else if(!k.altKey && !k.ctrlKey && !k.metaKey && !k.shiftKey && key==='f')
+        action='select';
+      if(!action)return;
+      // Consume every recognized keydown including OS key-repeat. Previously
+      // repeat returned early without preventDefault, so Cocos could receive
+      // the same key for a native command, potentially on the selected node.
+      k.preventDefault();k.stopImmediatePropagation();
+      const id=shortcutKeyId(k);
+      if(k.repeat || pressedShortcutKeys.has(id))return;
+      pressedShortcutKeys.add(id);
+      if(action==='expand'){
+        const arrow=hovered.drag.querySelector('.arrow') as HTMLElement|null;
+        if(arrow && hovered.row.hasAttribute('is-parent'))arrow.click();
+      }else if(action==='active'){
+        if(hovered.uuid)void toggleActive(hovered);
+      }else if(action==='collapseOthers'){
+        collapseAll(hovered);
+      }else if(action==='collapseAll'){
+        collapseAll();
+      }else if(action==='select' && hovered.uuid){
+        editor()?.Selection?.select?.('node',hovered.uuid);
       }
     };
-    root.addEventListener('click', guideClick, true);
-    root.addEventListener('mouseover', over, true);
-    root.addEventListener('contextmenu', menu, true);
-    root.addEventListener('keydown', keydown, true);
-    listeners.push(() => { root.removeEventListener('click', guideClick, true); root.removeEventListener('mouseover', over, true); root.removeEventListener('contextmenu', menu, true); root.removeEventListener('keydown', keydown, true); });
+    root.addEventListener('click',guideClick,true);
+    root.addEventListener('mouseover',over,true);
+    root.addEventListener('contextmenu',menu,true);
+    root.addEventListener('keydown',keydown,true);
+    root.addEventListener('keyup',keyup,true);
+    const keyWindow=(root instanceof Document ? root : root.ownerDocument).defaultView;
+    keyWindow?.addEventListener('blur',shortcutBlur);
+    listeners.push(()=>{
+      root.removeEventListener('click',guideClick,true);
+      root.removeEventListener('mouseover',over,true);
+      root.removeEventListener('contextmenu',menu,true);
+      root.removeEventListener('keydown',keydown,true);
+      root.removeEventListener('keyup',keyup,true);
+      keyWindow?.removeEventListener('blur',shortcutBlur);
+      pressedShortcutKeys.clear();
+    });
   }
   function collapseAll(except?: Item): void {
     const keep = new Set<string>();

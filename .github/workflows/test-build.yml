@@ -33,10 +33,32 @@ jobs:
         run: npm test
       - name: Package installable test ZIP
         run: npm run pack:local
-      - name: Upload test ZIP (not a GitHub release)
+      # GitHub Actions always wraps uploaded artifacts in a ZIP. Uploading
+      # the ZIP from pack:local would produce zip-inside-zip. Stage the actual
+      # Cocos extension files instead, so the downloaded artifact ZIP itself
+      # is importable directly into Cocos Creator.
+      - name: Stage directly importable plugin contents
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          archive = Path('vHierarchy-0.1.1-test.zip')
+          stage = Path('.installable-artifact')
+          with ZipFile(archive) as z:
+              names = z.namelist()
+              assert 'cocos-vhierarchy/package.json' in names, 'Extension manifest is missing'
+              assert not any(name.lower().endswith('.zip') for name in names), 'Nested ZIP is forbidden'
+              assert all(name.startswith('cocos-vhierarchy/') for name in names), 'Unexpected ZIP root'
+              z.extractall(stage)
+          assert (stage / 'cocos-vhierarchy/package.json').is_file()
+          assert (stage / 'cocos-vhierarchy/dist/main.js').is_file()
+          print('Prepared direct-import archive contents')
+          PY
+      - name: Upload directly importable test ZIP (no nested archive, no release)
         uses: actions/upload-artifact@v4
         with:
           name: vHierarchy-test-${{ github.run_number }}
-          path: vHierarchy-0.1.1-test.zip
+          path: .installable-artifact/
+          include-hidden-files: false
           if-no-files-found: error
           retention-days: 30

@@ -40,9 +40,11 @@ jobs:
       - name: Stage directly importable plugin contents
         run: |
           python3 - <<'PY'
+          import json
           from pathlib import Path
           from zipfile import ZipFile
-          archive = Path('vHierarchy-0.1.1-test.zip')
+          version = json.loads(Path('package.json').read_text())['version']
+          archive = Path(f'vHierarchy-{version}-test.zip')
           stage = Path('installable-artifact')
           with ZipFile(archive) as z:
               names = z.namelist()

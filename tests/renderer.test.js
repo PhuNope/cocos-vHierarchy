@@ -147,80 +147,129 @@ test('hierarchy line thickness slider displays px preview and persists through s
   assert.match(renderer,/tree\.style\.removeProperty\('--vh-guide-thickness'\)/);
 });
 
-test('keyboard shortcuts and their settings are removed; only Ctrl-left-click palette hint remains',()=>{
+test('keyboard shortcuts remain removed; Ctrl + right-click is the only Palette gesture',()=>{
   assert.doesNotMatch(renderer,/keyboardShortcuts|pressedShortcutKeys|shortcutKeyId|SHORTCUT_REFERENCE|shortcutLabel/);
   assert.doesNotMatch(renderer,/keyboardRoot\.addEventListener|root\.addEventListener\('keydown'/);
-  assert.doesNotMatch(renderer,/root\.addEventListener\('keyup'|root\.addEventListener\('contextmenu'/);
+  assert.doesNotMatch(renderer,/root\.addEventListener\('keyup'/);
   assert.doesNotMatch(renderer,/function collapseAll\(/);
-  assert.doesNotMatch(renderer,/Alt \+ right-click node/);
-  assert.match(renderer,/Ctrl \+ left-click a Hierarchy node to open this palette/);
-  assert.match(renderer,/Ctrl \+ Left Click/);
-  assert.match(renderer,/root\.addEventListener\('click', paletteClick, true\)/);
-  assert.match(renderer,/root\.removeEventListener\('click', paletteClick, true\)/);
-  // The native mouse-only fold interaction and on-row Active checkbox survive.
+  assert.doesNotMatch(renderer,/Ctrl \+ left-click a Hierarchy node/);
+  assert.match(renderer,/Ctrl \+ right-click a Hierarchy node to open this palette/);
+  assert.match(renderer,/Ctrl \+ Right Click/);
+  assert.match(renderer,/root\.addEventListener\('mousedown', paletteMouseDown, true\)/);
+  assert.match(renderer,/root\.addEventListener\('contextmenu', paletteContextMenu, true\)/);
+  assert.match(renderer,/root\.removeEventListener\('mousedown', paletteMouseDown, true\)/);
+  assert.match(renderer,/root\.removeEventListener\('contextmenu', paletteContextMenu, true\)/);
+  assert.doesNotMatch(renderer,/root\.addEventListener\('click', paletteClick, true\)/);
+  // Native multi-selection, collapse, and Active checkbox are still available.
   assert.match(renderer,/root\.addEventListener\('click', guideClick, true\)/);
   assert.match(renderer,/checkbox\.addEventListener\('change'/);
 });
-test('Ctrl + LEFT click opens Palette once, ordinary click and other modifiers remain native',()=>{
+
+test('Ctrl + RIGHT mouse button opens Palette; Ctrl + left-click never steals node multi-selection',()=>{
   const vm=require('node:vm');
   const start=renderer.indexOf('function listen(root) {');
   const end=renderer.indexOf('async function toggleActive(',start);
   assert.ok(start>0&&end>start);
   const listeners=new Map();
   const root={
-    addEventListener:(name,fn)=>{const current=listeners.get(name)||[];current.push(fn);listeners.set(name,current);},
+    addEventListener:(name,fn)=>{
+      const handlers=listeners.get(name)||[];
+      handlers.push(fn);
+      listeners.set(name,handlers);
+    },
     removeEventListener:(name,fn)=>{
-      const current=listeners.get(name)||[];listeners.set(name,current.filter(x=>x!==fn));
+      listeners.set(name,(listeners.get(name)||[]).filter(x=>x!==fn));
     },
   };
   class MouseEvent {
     constructor({button=0,ctrlKey=false,altKey=false,shiftKey=false,metaKey=false,target}={}){
-      Object.assign(this,{button,ctrlKey,altKey,shiftKey,metaKey,target,clientX:152,clientY:191,prevented:0,stopped:0});
+      Object.assign(this,{button,ctrlKey,altKey,shiftKey,metaKey,
+        target,clientX:152,clientY:191,prevented:0,stopped:0});
     }
     preventDefault(){this.prevented++;}
     stopImmediatePropagation(){this.stopped++;}
   }
   const row={isConnected:true};
   const item={uuid:'scene-node-uuid',searching:false,row};
+  const opened=[];
   const env={
     MouseEvent,views:[item],boundRoots:new WeakSet(),listeners:[],
     listRoot:{contains:r=>r===row},
     state:{options:{enabled:true,foldOnGuideClick:false}},
-    lastHovered:item,showPalette:(target,x,y)=>opened.push([target.uuid,x,y]),
+    lastHovered:item,
+    showPalette:(it,x,y)=>opened.push([it.uuid,x,y]),
   };
-  const opened=[];
   vm.runInNewContext(renderer.slice(start,end)+'\nthis.listen=listen;',env);
   env.listen(root);
   assert.equal(listeners.has('keydown'),false);
   assert.equal(listeners.has('keyup'),false);
-  assert.equal(listeners.has('contextmenu'),false);
+  assert.equal(listeners.has('mousedown'),true);
+  assert.equal(listeners.has('contextmenu'),true);
   const target={
     closest(selector){return selector==='.tree-node'?row:null;},
   };
-  const click=(args={})=>{
-    const e=new MouseEvent({target,ctrlKey:true,...args});
-    // simulate capture listeners until the event is consumed
-    for(const fn of listeners.get('click')||[]){
-      fn(e);if(e.stopped)break;
+  function dispatch(name,args={}){
+    const e=new MouseEvent({target,...args});
+    for(const fn of listeners.get(name)||[]){
+      fn(e);
+      if(e.stopped)break;
     }
     return e;
-  };
-  let e=click();
-  assert.equal(e.prevented,1);assert.equal(e.stopped,1);
-  assert.equal(opened.length,1);assert.deepEqual(opened[0],['scene-node-uuid',152,191]);
-  e=click();
-  assert.equal(e.stopped,1);
-  assert.equal(opened.length,2,'repeated Ctrl-left click opens panel without touching scene commands');
-  for(const options of [{ctrlKey:false},{button:2},{shiftKey:true},{altKey:true},{metaKey:true}]){
-    click(options);
   }
-  assert.equal(opened.length,2,'other gestures are left to Cocos');
+  // Ctrl+left click is native Cocos multi-select; never open the Palette.
+  let e=dispatch('mousedown',{button:0,ctrlKey:true});
+  assert.equal(e.prevented,0);assert.equal(e.stopped,0);
+  e=dispatch('click',{button:0,ctrlKey:true});
+  assert.equal(e.prevented,0);assert.equal(e.stopped,0);
+  assert.equal(opened.length,0);
+  // macOS can synthesize contextmenu after Ctrl+left mouse, sometimes with
+  // button 2; the preceding genuine right mouse-down is the necessary gate.
+  e=dispatch('contextmenu',{button:2,ctrlKey:true});
+  assert.equal(e.stopped,0);assert.equal(opened.length,0);
+  // Plain right-click preserves the normal native Cocos node context menu.
+  dispatch('mousedown',{button:2,ctrlKey:false});
+  e=dispatch('contextmenu',{button:2,ctrlKey:false});
+  assert.equal(e.stopped,0);assert.equal(e.prevented,0);
+  assert.equal(opened.length,0);
+  // Ctrl + physical RIGHT click opens Palette and suppresses only that menu.
+  e=dispatch('mousedown',{button:2,ctrlKey:true});
+  assert.equal(e.stopped,0,'mousedown must never break Creator drag/selection');
+  assert.equal(e.prevented,0);
+  e=dispatch('contextmenu',{button:2,ctrlKey:true});
+  assert.equal(e.stopped,1);assert.equal(e.prevented,1);
+  assert.deepEqual(opened[0],['scene-node-uuid',152,191]);
+  // Repeated contextmenu from same press is ignored; no duplicate Palette.
+  dispatch('contextmenu',{button:2,ctrlKey:true});
+  assert.equal(opened.length,1);
+  dispatch('mousedown',{button:2,ctrlKey:true});
+  dispatch('contextmenu',{button:2,ctrlKey:true});
+  assert.equal(opened.length,2,'second deliberate Ctrl + right-click opens Palette');
+
+  // Other modifiers, a different node and disabled extension do nothing.
+  for(const options of [{shiftKey:true},{altKey:true},{metaKey:true}]){
+    dispatch('mousedown',{button:2,ctrlKey:true,...options});
+    e=dispatch('contextmenu',{button:2,ctrlKey:true,...options});
+    assert.equal(e.stopped,0);
+  }
+  dispatch('mousedown',{button:2,ctrlKey:true});
+  e=dispatch('contextmenu',{button:2,ctrlKey:true,
+    target:{closest:selector=>selector==='.tree-node'?{isConnected:true}:null}});
+  assert.equal(e.stopped,0);
+  env.state.options.enabled=false;
+  dispatch('mousedown',{button:2,ctrlKey:true});
+  e=dispatch('contextmenu',{button:2,ctrlKey:true});
+  assert.equal(e.stopped,0);
+  assert.equal(opened.length,2);
+  env.state.options.enabled=true;
   item.row.isConnected=false;
-  click();
+  dispatch('mousedown',{button:2,ctrlKey:true});
+  dispatch('contextmenu',{button:2,ctrlKey:true});
   assert.equal(opened.length,2,'detached node is not acted upon');
   for(const dispose of env.listeners)dispose();
   assert.equal((listeners.get('click')||[]).length,0);
   assert.equal((listeners.get('mouseover')||[]).length,0);
+  assert.equal((listeners.get('mousedown')||[]).length,0);
+  assert.equal((listeners.get('contextmenu')||[]).length,0);
 });
 test('Google icon palette uses searchable allowlisted catalog with independent tint controls',()=>{
   assert.match(renderer,/GOOGLE_MATERIAL_CSS = 'https:\/\/fonts\.googleapis\.com\/css2\?/);

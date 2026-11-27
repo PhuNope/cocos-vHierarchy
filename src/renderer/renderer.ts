@@ -16,7 +16,7 @@
   interface Hook { buildId?: string; refresh(): void; stop(): void; stats(): unknown; applyState(state: State): void; setIcons(icons: Record<string, string>): void; setMaterialSymbols(data: {names:string[];full:boolean}): void; showSettings(): void; sceneNodeChanged(ids: string[] | null): void; }
   const w = window as Window & { __vHierarchy388?: Hook; Editor?: any; require?: (id: string) => any };
   const KEY = '__vHierarchy388';
-  const BUILD_ID = '0.1.1-patch50-mouse-only-palette';
+  const BUILD_ID = '0.1.1-patch51-ctrl-right-palette';
   if (document.body?.getAttribute('name') !== 'main') return { status: 'not-main' };
   if (w.__vHierarchy388) {
     if (w.__vHierarchy388.buildId === BUILD_ID) {
@@ -1398,14 +1398,30 @@
       parent.drag.querySelector<HTMLElement>(':scope > .arrow')?.click();
       schedule();
     };
-    // No vHierarchy keyboard handlers. The only modified-click shortcut
-    // is Ctrl + LEFT-click on a node to open the appearance Palette.
-    const paletteClick=(e:Event):void=>{
-      if(!(e instanceof MouseEvent) || e.button!==0 || !e.ctrlKey ||
+    // Native Ctrl+LEFT-click is reserved for multi-selection. Open our
+    // Palette only after a genuine Ctrl+RIGHT-button press followed by its
+    // contextmenu event. macOS may synthesize contextmenu from Ctrl+LEFT,
+    // so checking contextmenu.button alone is insufficient.
+    let ctrlRightPress:{row:HTMLElement;time:number}|null=null;
+    const paletteMouseDown=(e:Event):void=>{
+      ctrlRightPress=null;
+      if(!(e instanceof MouseEvent) || e.button!==2 || !e.ctrlKey ||
         e.altKey || e.shiftKey || e.metaKey || !state.options.enabled)return;
+      const row=(e.target as Element|null)?.closest?.('.tree-node') as HTMLElement|null;
+      if(row)ctrlRightPress={row,time:Date.now()};
+      // Never preventDefault/stopPropagation on mousedown: Cocos owns selection.
+    };
+    const paletteContextMenu=(e:Event):void=>{
+      if(!(e instanceof MouseEvent))return;
+      const pressed=ctrlRightPress;
+      ctrlRightPress=null;
+      if(!pressed || e.button!==2 || !e.ctrlKey ||
+        e.altKey || e.shiftKey || e.metaKey || !state.options.enabled ||
+        Date.now()-pressed.time>1500)return;
       const target=e.target as Element|null;
       if(target?.closest?.('input,textarea,select,button,[contenteditable],.vh-toolbar,.vh-pop,.vh-active-hit,ui-icon.lock,.arrow'))return;
       const row=target?.closest?.('.tree-node') as HTMLElement|null;
+      if(row!==pressed.row)return;
       const item=views.find(view=>view.row===row);
       if(!item?.uuid || item.searching || !item.row.isConnected ||
         !listRoot?.contains(item.row))return;
@@ -1413,13 +1429,16 @@
       e.stopImmediatePropagation();
       showPalette(item,e.clientX,e.clientY);
     };
-    root.addEventListener('click',paletteClick,true);
+    root.addEventListener('mousedown',paletteMouseDown,true);
+    root.addEventListener('contextmenu',paletteContextMenu,true);
     root.addEventListener('click',guideClick,true);
     root.addEventListener('mouseover',over,true);
     listeners.push(()=>{
-      root.removeEventListener('click',paletteClick,true);
+      root.removeEventListener('mousedown',paletteMouseDown,true);
+      root.removeEventListener('contextmenu',paletteContextMenu,true);
       root.removeEventListener('click',guideClick,true);
       root.removeEventListener('mouseover',over,true);
+      ctrlRightPress=null;
     });
   }
   async function toggleActive(item: Item): Promise<void> {
@@ -1664,7 +1683,7 @@
     const recursiveIcon=el('label');const iconCheck=el('input') as HTMLInputElement;iconCheck.type='checkbox';iconCheck.checked=!!current.recursiveIcon;
     iconCheck.addEventListener('change',()=>{current.recursiveIcon=iconCheck.checked;void persistAppearance(item,{...current});});
     recursiveIcon.append(iconCheck,document.createTextNode('Apply icon to descendants'));wrap.append(recursiveIcon);
-    wrap.append(el('p','vh-footer','Ctrl + left-click a Hierarchy node to open this palette.'));
+    wrap.append(el('p','vh-footer','Ctrl + right-click a Hierarchy node to open this palette.'));
   }
   function showSettings(): void {
     const wrap=popup('vHierarchy · v0.1.0');
@@ -1720,7 +1739,7 @@
     const colorControls=el('section','vh-color-controls');
     const paletteHeading=el('div','vh-shortcut-head');
     paletteHeading.append(el('strong','','Palette appearance'),
-      el('kbd','vh-setting-shortcut','Ctrl + Left Click'));
+      el('kbd','vh-setting-shortcut','Ctrl + Right Click'));
     colorControls.append(paletteHeading);
     const preview=el('div','vh-color-preview');
     const previews=PALETTE.map(hex=>{const cell=el('span');preview.append(cell);return {hex,cell};});
@@ -1737,7 +1756,7 @@
     };
     addRange('colorSaturation','Saturation');addRange('colorBrightness','Brightness');
     colorControls.append(preview);updatePreview();
-    wrap.append(colorControls,el('p','vh-footer','Settings are saved per project. Ctrl + left-click a node to open its Palette.'));
+    wrap.append(colorControls,el('p','vh-footer','Settings are saved per project. Ctrl + right-click a node to open its Palette.'));
     wrap.append(btn('Close','Close settings',()=>closePopup()));
   }
   async function showScenes(): Promise<void> {
